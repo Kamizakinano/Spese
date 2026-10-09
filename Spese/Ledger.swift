@@ -15,6 +15,21 @@ func nextSalaryKey(day: Int) -> String {
     return monthKey(d)
 }
 
+/// Giorno del prossimo stipendio, dopo oggi: se oggi è il giorno dello stipendio è quello del mese dopo.
+/// Nei mesi più corti di `day` vale l'ultimo giorno del mese.
+func nextPayday(day: Int, from now: Date = Date()) -> Date? {
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: now)
+    for add in 0...2 {
+        guard let m = cal.date(byAdding: .month, value: add, to: today),
+              let first = cal.date(from: cal.dateComponents([.year, .month], from: m)),
+              let n = cal.range(of: .day, in: .month, for: first)?.count,
+              let d = cal.date(byAdding: .day, value: min(day, n) - 1, to: first) else { continue }
+        if d > today { return d }
+    }
+    return nil
+}
+
 /// Date dovute (fino a oggi) per un evento mensile, a partire dal mese `key`.
 func dueDates(from key: String, day: Int) -> (dates: [Date], next: String) {
     let p = key.split(separator: "-").compactMap { Int($0) }

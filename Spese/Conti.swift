@@ -20,6 +20,8 @@ struct ContiView: View {
     @Query private var accounts: [Account]
     @State private var kind = "prelievo"
     @State private var showMove = false
+    @State private var editBank = false
+    @State private var editCash = false
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first) }
     private var bank: Double { ledger.figures(for: Date()).left }
@@ -57,6 +59,11 @@ struct ContiView: View {
                     NavigationLink { CashView() } label: { row("banknote", "Contanti (portafoglio)", cash, Color(hex: "E67E22")) }
                 }
 
+                Section("Modifica i saldi") {
+                    Button { editBank = true } label: { Label("Modifica soldi in banca", systemImage: "pencil") }
+                    Button { editCash = true } label: { Label("Modifica contanti", systemImage: "pencil") }
+                }
+
                 Section("Spostamenti") {
                     Button { kind = "prelievo"; showMove = true } label: {
                         Label("Ho prelevato contanti dalla banca", systemImage: "arrow.down.to.line")
@@ -73,6 +80,8 @@ struct ContiView: View {
             }
             .navigationTitle("Conti")
             .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
+            .sheet(isPresented: $editBank) { BalanceEditor(isCash: false, current: bank) }
+            .sheet(isPresented: $editCash) { BalanceEditor(isCash: true, current: cash) }
         }
     }
 }
@@ -85,6 +94,7 @@ struct BankView: View {
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @State private var editBank = false
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first) }
     private var fig: Figures { ledger.figures(for: Date()) }
@@ -110,6 +120,10 @@ struct BankView: View {
             }
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
             .listRowBackground(Color.clear)
+
+            Section {
+                Button { editBank = true } label: { Label("Modifica saldo in banca", systemImage: "pencil") }
+            }
 
             Section("Questo mese") {
                 HStack { Text("In banca a inizio mese"); Spacer(); Text(eur(fig.startAvail)).bold() }
@@ -138,6 +152,7 @@ struct BankView: View {
             }
         }
         .navigationTitle("Banca (carta)")
+        .sheet(isPresented: $editBank) { BalanceEditor(isCash: false, current: fig.left) }
     }
 }
 
@@ -150,6 +165,7 @@ struct CashView: View {
     @Query private var accounts: [Account]
     @State private var kind = "prelievo"
     @State private var showMove = false
+    @State private var editCash = false
 
     private var ledger: Ledger { Ledger(incomes: [], expenses: all, moves: [], cash: cashMoves, account: accounts.first) }
     private var cash: Double { ledger.cashBalance() }
@@ -175,7 +191,7 @@ struct CashView: View {
                 Button { kind = "prelievo"; showMove = true } label: { Label("Prelievo dalla banca", systemImage: "arrow.down.to.line") }
                 Button { kind = "versamento"; showMove = true } label: { Label("Versamento in banca", systemImage: "arrow.up.to.line") }
                 Button { kind = "ricevuti"; showMove = true } label: { Label("Contanti ricevuti", systemImage: "plus.circle") }
-                Button { kind = "correzione"; showMove = true } label: { Label("Correzione del saldo", systemImage: "slider.horizontal.3") }
+                Button { editCash = true } label: { Label("Modifica saldo contanti", systemImage: "pencil") }
             }
 
             Section("Spostamenti") {
@@ -211,6 +227,7 @@ struct CashView: View {
         }
         .navigationTitle("Contanti")
         .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
+        .sheet(isPresented: $editCash) { BalanceEditor(isCash: true, current: cash) }
     }
 }
 
@@ -264,6 +281,66 @@ struct CashMoveEditor: View {
             ctx.insert(CashMove(amount: v, date: date, note: note, kind: kind, bank: false))
         default:
             ctx.insert(CashMove(amount: raw, date: date, note: note, kind: kind, bank: false))
+        }
+        dismiss()
+    }
+}
+
+// MARK: - Modifica dei saldi
+
+/// Si scrive quanto si ha davvero adesso: la differenza corregge il saldo di partenza
+/// (saldo iniziale in banca o contanti iniziali), senza toccare spese ed entrate.
+struct BalanceEditor: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    @Query private var incomes: [Income]
+    @Query private var accounts: [Account]
+    let isCash: Bool
+    let current: Double
+    @State private var amountText = ""
+    @State private var error = ""
+
+    private var diff: Double? { parseAmount(amountText).map { $0 - current } }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Importo (€)", text: $amountText).keyboardType(.numbersAndPunctuation)
+                } header: {
+                    Text(isCash ? "Contanti che hai adesso" : "Soldi in banca adesso")
+                } footer: {
+                    Text("Scrivi l'importo reale: l'app corregge da sola la differenza. Spese ed entrate già inserite restano come sono.")
+                }
+                HStack { Text("Saldo nell'app"); Spacer(); Text(eur(current)).foregroundStyle(.secondary) }
+                if let d = diff, abs(d) >= 0.005 {
+                    HStack { Text("Differenza"); Spacer(); Text((d > 0 ? "+" : "") + eur(d)).bold() }
+                }
+                if !error.isEmpty { Text(error).font(.footnote).foregroundStyle(.red) }
+            }
+            .navigationTitle(isCash ? "Modifica contanti" : "Modifica saldo banca")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Salva") { save() } }
+            }
+            .onAppear { amountText = String(format: "%.2f", current).replacingOccurrences(of: ".", with: ",") }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func save() {
+        guard let d = diff else { error = "Inserisci un importo valido."; return }
+        guard let a = accounts.first else { dismiss(); return }
+        if abs(d) >= 0.005 {
+            if isCash {
+                a.cashStart += d
+            } else if let i = incomes.first(where: { $0.kind == initialKind }) {
+                i.amount += d
+            } else {
+                ctx.insert(Income(amount: d, saved: 0, kind: initialKind, date: a.startDate, note: "Saldo iniziale"))
+            }
+            try? ctx.save()
         }
         dismiss()
     }
