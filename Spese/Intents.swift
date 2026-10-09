@@ -42,13 +42,33 @@ struct AddExpenseIntent: AppIntent {
         let cat = guessCategory(merchant: name, available: cats.map { $0.name })
         let e = Expense(amount: value, categoryName: cat, date: Date(), note: name)
         e.method = method.rawValue
+        // In viaggio: la spesa va nel viaggio e, all'estero, viene convertita dalla valuta locale.
+        let trips = (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []
+        if let t = activeTrip(trips), t.isForeign, !looksLikeEuro(amount) { await Rates.refresh() }
+        applyActiveTrip(e, raw: amount, trips: trips) { code in Rates.cached[code] }
         ctx.insert(e)
         try ctx.save()
         if UserDefaults.standard.bool(forKey: applePayNotifyKey) {
-            notify("Spesa registrata", "\(eur(value)) · \(name.isEmpty ? cat : name)")
+            notify("Spesa registrata", "\(eur(e.amount)) · \(name.isEmpty ? cat : name)")
         }
         return .result()
     }
+}
+
+/// Se oggi c'è un viaggio, mette la spesa nel viaggio. Se il viaggio è all'estero e l'importo
+/// non è indicato in euro, lo considera nella valuta locale e lo converte (cambio del giorno,
+/// altrimenti l'ultimo usato nel viaggio). Senza nessun cambio l'importo resta com'è.
+func applyActiveTrip(_ e: Expense, raw: String, trips: [Trip], now: Date = Date(), rate: (String) -> Double?) {
+    guard let t = activeTrip(trips, now: now) else { return }
+    e.tripID = t.uid
+    guard t.isForeign, !looksLikeEuro(raw) else { return }
+    let r = rate(t.currency) ?? (t.lastRate > 0 ? t.lastRate : nil)
+    guard let r, r > 0 else { return }
+    e.originalAmount = e.amount
+    e.originalCurrency = t.currency
+    e.rate = r
+    e.amount = (e.amount / r * 100).rounded() / 100
+    t.lastRate = r
 }
 
 /// Rende "Aggiungi spesa" disponibile subito in Comandi rapidi e con Siri, senza doverlo costruire.

@@ -22,11 +22,12 @@ struct PeriodSummary {
 func summarize(expenses: [Expense], incomes: [Income], start: Date, end: Date) -> PeriodSummary {
     let ex = expenses.filter { $0.date >= start && $0.date < end }
     let cats = Dictionary(grouping: ex, by: \.categoryRaw)
-        .map { CategoryAmount(name: $0.key, total: $0.value.reduce(0) { $0 + $1.amount }) }
+        .map { CategoryAmount(name: $0.key, total: $0.value.reduce(0) { $0 + $1.myAmount }) }
+        .filter { $0.total > 0 }
         .sorted { $0.total > $1.total }
     let inc = incomes.filter { $0.kind != initialKind && $0.date >= start && $0.date < end }
         .reduce(0) { $0 + $1.amount }
-    return PeriodSummary(start: start, end: end, total: ex.reduce(0) { $0 + $1.amount },
+    return PeriodSummary(start: start, end: end, total: ex.reduce(0) { $0 + $1.myAmount },
                          count: ex.count, income: inc, byCategory: cats)
 }
 
@@ -139,7 +140,9 @@ struct PeriodSummaryView: View {
 
 /// Elenco dei riepiloghi (periodo in corso e precedente), per la scheda Statistiche.
 struct PeriodSummariesLinks: View {
-    @Query private var all: [Expense]
+    @Query private var allRaw: [Expense]
+    @Query private var trips: [Trip]
+    private var all: [Expense] { statExpenses(allRaw, trips: trips) }
     @Query private var incomes: [Income]
     @Query private var accounts: [Account]
 

@@ -90,6 +90,7 @@ struct Ledger {
     var cashMoves: [CashMove] = []
     let start: Date?
     var cashStart: Double = 0
+    var payments: [TripPayment] = []   // rimborsi dei viaggi
 
     static var endOfToday: Date {
         Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
@@ -99,7 +100,11 @@ struct Ledger {
     func figures(for month: Date) -> Figures {
         guard let start, let iv = Calendar.current.dateInterval(of: .month, for: month) else { return Figures() }
         func ex(_ a: Date, _ b: Date) -> Double {
-            expenses.filter { !$0.isCash && $0.date >= max(a, start) && $0.date < b }.reduce(0) { $0 + $1.amount }
+            // Le spese pagate da altri (nei viaggi) non toccano i miei soldi.
+            expenses.filter { !$0.isCash && $0.paidByMe && $0.date >= max(a, start) && $0.date < b }.reduce(0) { $0 + $1.amount }
+        }
+        func pay(_ a: Date, _ b: Date) -> Double {
+            Ledger.myPayments(payments, cash: false, from: max(a, start), to: b)
         }
         func mv(_ a: Date, _ b: Date) -> Double {
             moves.filter { $0.date >= max(a, start) && $0.date < b }.reduce(0) { $0 + $1.amount }
@@ -115,19 +120,28 @@ struct Ledger {
             .reduce(0) { $0 + $1.amount - $1.saved }
         var f = Figures()
         let past = Date.distantPast
-        f.startAvail = inc(past, iv.start) - ex(past, iv.start) - mv(past, iv.start) - tr(past, iv.start) + initial
+        f.startAvail = inc(past, iv.start) - ex(past, iv.start) - mv(past, iv.start) - tr(past, iv.start) - pay(past, iv.start) + initial
         f.incomeNet = inc(iv.start, iv.end) - initial
         f.spent = ex(iv.start, iv.end)
-        f.moved = mv(iv.start, iv.end) + tr(iv.start, iv.end)
+        f.moved = mv(iv.start, iv.end) + tr(iv.start, iv.end) + pay(iv.start, iv.end)
         return f
     }
 
     /// Contanti nel portafoglio fino alla data indicata.
     func cashBalance(asOf end: Date = Ledger.endOfToday) -> Double {
         guard let start else { return 0 }
-        let spent = expenses.filter { $0.isCash && $0.date >= start && $0.date < end }.reduce(0) { $0 + $1.amount }
+        let spent = expenses.filter { $0.isCash && $0.paidByMe && $0.date >= start && $0.date < end }.reduce(0) { $0 + $1.amount }
         let moved = cashMoves.filter { $0.date >= start && $0.date < end }.reduce(0) { $0 + $1.amount }
-        return cashStart + moved - spent
+        return cashStart + moved - spent - Ledger.myPayments(payments, cash: true, from: start, to: end)
+    }
+
+    /// Soldi miei usciti (positivo) o entrati (negativo) per i rimborsi dei viaggi, con carta o in contanti.
+    static func myPayments(_ payments: [TripPayment], cash: Bool, from a: Date, to b: Date) -> Double {
+        payments.filter { ($0.method == "contanti") == cash && $0.date >= a && $0.date < b }.reduce(0) { sum, p in
+            if p.from == me { return sum + p.amount }
+            if p.to == me { return sum - p.amount }
+            return sum
+        }
     }
 
     var savingsTotal: Double {
@@ -136,8 +150,9 @@ struct Ledger {
 }
 
 extension Ledger {
-    init(incomes: [Income], expenses: [Expense], moves: [SavingsMove], cash: [CashMove], account: Account?) {
+    init(incomes: [Income], expenses: [Expense], moves: [SavingsMove], cash: [CashMove], account: Account?,
+         payments: [TripPayment] = []) {
         self.init(incomes: incomes, expenses: expenses, moves: moves, cashMoves: cash,
-                  start: account?.startDate, cashStart: account?.cashStart ?? 0)
+                  start: account?.startDate, cashStart: account?.cashStart ?? 0, payments: payments)
     }
 }

@@ -110,6 +110,26 @@ final class SpeseUITests: XCTestCase {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()   // tocca l'interruttore a destra
         XCTAssertTrue(app.staticTexts["Dal"].waitForExistence(timeout: 5), "Accendendo devono comparire le date Dal e Al")
         XCTAssertTrue(app.staticTexts["Al"].exists)
+
+        // Viaggi: nuovo viaggio, una spesa da 25 € che scala il saldo (820 → 795).
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let viaggi = app.buttons["Viaggi"]
+        tries = 0
+        while !viaggi.isHittable && tries < 6 { app.swipeDown(); tries += 1 }
+        viaggi.tap()
+        app.navigationBars.buttons["Nuovo viaggio"].tap()
+        type("Prova viaggio", into: app.textFields["Nome (es. Londra 2026)"])
+        app.navigationBars.buttons["Salva"].tap()
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "Prova viaggio")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Il viaggio non compare nell'elenco")
+        row.tap()
+        app.navigationBars.buttons["Aggiungi spesa"].tap()
+        type("25", into: app.textFields["Importo (€)"])
+        app.navigationBars.buttons["Salva"].tap()
+        expectText("25,00", "La spesa del viaggio non compare")
+        app.tabBars.buttons["Spese"].tap()
+        expectText("In viaggio: Prova viaggio", "Manca il riquadro del viaggio in corso")
+        expectText("795,00", "La spesa del viaggio deve scalare il saldo (820 - 25)")
     }
 
     /// Conta i giorni da oggi al prossimo giorno `day` (escluso oggi), contando un giorno alla volta.

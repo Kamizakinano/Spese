@@ -95,7 +95,9 @@ struct HomeView: View {
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @Query private var payments: [TripPayment]
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @Query(sort: \Trip.startDate, order: .reverse) private var trips: [Trip]
 
     @State private var month = Date()
     @State private var showAdd = false
@@ -114,9 +116,11 @@ struct HomeView: View {
     private var expenses: [Expense] {
         all.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) }
     }
-    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first) }
+    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var fig: Figures { ledger.figures(for: month) }
-    private var total: Double { expenses.reduce(0) { $0 + $1.amount } }
+    /// Spese del mese che contano nelle statistiche (senza i viaggi tenuti a parte; per le spese divise, la mia quota).
+    private var statMonth: [Expense] { statExpenses(expenses, trips: trips) }
+    private var total: Double { statMonth.reduce(0) { $0 + $1.myAmount } }
     private var budget: Double { fig.budget }
     private var left: Double { fig.left }
     private var cashNow: Double {
@@ -131,10 +135,10 @@ struct HomeView: View {
     }
 
     private var byCat: [CatTotal] {
-        Dictionary(grouping: expenses, by: \.categoryRaw).map { name, list in
+        Dictionary(grouping: statMonth, by: \.categoryRaw).map { name, list in
             let l = look(name)
-            return CatTotal(name: name, icon: l.icon, color: l.color, total: list.reduce(0) { $0 + $1.amount })
-        }.sorted { $0.total > $1.total }
+            return CatTotal(name: name, icon: l.icon, color: l.color, total: list.reduce(0) { $0 + $1.myAmount })
+        }.filter { $0.total > 0 }.sorted { $0.total > $1.total }
     }
 
     private var owedTotal: Double { all.filter { !$0.settled && $0.owedAmount > 0 }.reduce(0) { $0 + $1.owedAmount } }
@@ -149,7 +153,8 @@ struct HomeView: View {
     }
     private func spent(_ c: CategoryItem) -> Double {
         guard let r = limitRange else { return 0 }
-        return all.filter { $0.categoryRaw == c.name && $0.date >= r.start && $0.date < r.end }.reduce(0) { $0 + $1.amount }
+        return statExpenses(all, trips: trips).filter { $0.categoryRaw == c.name && $0.date >= r.start && $0.date < r.end }
+            .reduce(0) { $0 + $1.myAmount }
     }
     private var limitsTitle: String {
         guard limitOn, let r = limitRange else { return "Limiti per categoria" }
@@ -170,7 +175,7 @@ struct HomeView: View {
         return payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd)
     }
     private func spentInPeriod(_ p: (start: Date, end: Date)) -> Double {
-        all.filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.amount }
+        statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.myAmount }
     }
 
     /// Quanto si può spendere al giorno fino al prossimo stipendio. Toccandolo si sceglie il periodo.
@@ -209,6 +214,19 @@ struct HomeView: View {
                 Section { hero }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
+
+                if let t = activeTrip(trips) {
+                    Section {
+                        NavigationLink { TripDetailView(trip: t) } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("In viaggio: \(t.name)").bold()
+                                    Text("Tocca per le spese del viaggio" + (t.isForeign ? " in \(t.currency)" : "")).font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: { Image(systemName: "airplane.departure").foregroundStyle(Theme.accent) }
+                        }
+                    }
+                }
 
                 if !applePayBannerHidden {
                     Section {
@@ -283,7 +301,7 @@ struct HomeView: View {
                                 .frame(width: 34, height: 34).background(l.color, in: Circle())
                             VStack(alignment: .leading) {
                                 Text(e.note.isEmpty ? e.categoryRaw : e.note)
-                                Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(e.categoryRaw)" + (e.tag.isEmpty ? "" : " · #\(e.tag)") + (e.isCash ? " · contanti" : ""))
+                                Text(rowDetail(e))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -321,7 +339,13 @@ struct HomeView: View {
                 }.padding(20)
             }
             .sheet(isPresented: $showAdd) { AddExpenseView(defaultDate: defaultDate()) }
-            .sheet(item: $editing) { AddExpenseView(defaultDate: $0.date, editing: $0) }
+            .sheet(item: $editing) { e in
+                if let t = trips.first(where: { $0.uid == e.tripID }) {
+                    TripExpenseEditor(trip: t, editing: e)
+                } else {
+                    AddExpenseView(defaultDate: e.date, editing: e)
+                }
+            }
             .sheet(isPresented: $showPeriod) { PayPeriodEditor() }
             .sheet(item: $endedSummary) { e in
                 NavigationStack {
@@ -371,11 +395,20 @@ struct HomeView: View {
             return (s, e)
         }()
         guard let prev = chosen ?? previousPeriod(before: p.start, day: a.salaryDay) else { return }
-        let s = summarize(expenses: all, incomes: incomes, start: prev.start, end: prev.end)
+        let s = summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, start: prev.start, end: prev.end)
         guard s.count > 0 else { return }
         let before = previousPeriod(before: prev.start, day: a.salaryDay)
-            .map { summarize(expenses: all, incomes: incomes, start: $0.start, end: $0.end) }
+            .map { summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, start: $0.start, end: $0.end) }
         endedSummary = EndedPeriod(summary: s, previous: before)
+    }
+
+    private func rowDetail(_ e: Expense) -> String {
+        var s = "\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(e.categoryRaw)"
+        if !e.tag.isEmpty { s += " · #\(e.tag)" }
+        if e.isCash { s += " · contanti" }
+        if let t = trips.first(where: { $0.uid == e.tripID }) { s += " · ✈︎ \(t.name)" }
+        if !e.paidByMe { s += " · pagato da \(e.paidBy)" }
+        return s
     }
 
     private func shift(_ n: Int) { month = Calendar.current.date(byAdding: .month, value: n, to: month) ?? month }

@@ -18,12 +18,13 @@ struct ContiView: View {
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @Query private var payments: [TripPayment]
     @State private var kind = "prelievo"
     @State private var showMove = false
     @State private var editBank = false
     @State private var editCash = false
 
-    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first) }
+    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var bank: Double { ledger.figures(for: Date()).left }
     private var cash: Double { ledger.cashBalance() }
 
@@ -94,12 +95,13 @@ struct BankView: View {
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @Query private var payments: [TripPayment]
     @State private var editBank = false
 
-    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first) }
+    private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var fig: Figures { ledger.figures(for: Date()) }
     private var cardExpenses: [Expense] {
-        all.filter { !$0.isCash && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month) }
+        all.filter { !$0.isCash && $0.paidByMe && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month) }
     }
 
     var body: some View {
@@ -163,13 +165,14 @@ struct CashView: View {
     @Query(sort: \Expense.date, order: .reverse) private var all: [Expense]
     @Query(sort: \CashMove.date, order: .reverse) private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @Query private var payments: [TripPayment]
     @State private var kind = "prelievo"
     @State private var showMove = false
     @State private var editCash = false
 
-    private var ledger: Ledger { Ledger(incomes: [], expenses: all, moves: [], cash: cashMoves, account: accounts.first) }
+    private var ledger: Ledger { Ledger(incomes: [], expenses: all, moves: [], cash: cashMoves, account: accounts.first, payments: payments) }
     private var cash: Double { ledger.cashBalance() }
-    private var cashExpenses: [Expense] { all.filter { $0.isCash } }
+    private var cashExpenses: [Expense] { all.filter { $0.isCash && $0.paidByMe } }
 
     var body: some View {
         List {

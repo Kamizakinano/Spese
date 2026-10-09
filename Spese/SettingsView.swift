@@ -27,7 +27,8 @@ struct SettingsView: View {
                     NavigationLink { SalaryView() } label: { Label("Stipendio e risparmi", systemImage: "eurosign.circle") }
                     NavigationLink { CategoriesView() } label: { Label("Categorie e limiti", systemImage: "square.grid.2x2") }
                     NavigationLink { RecurringView() } label: { Label("Spese ricorrenti", systemImage: "repeat") }
-                    NavigationLink { TagsView() } label: { Label("Viaggi e tag", systemImage: "tag") }
+                    NavigationLink { TripsView() } label: { Label("Viaggi", systemImage: "airplane") }
+                    NavigationLink { TagsView() } label: { Label("Tag", systemImage: "tag") }
                     NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
                 }
