@@ -18,7 +18,7 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
-      - name: Prova sul simulatore (l'app deve avviarsi senza crash)
+      - name: Prova sul simulatore (avvio, aggiornamento e prove automatiche)
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
           import json, sys
@@ -55,6 +55,15 @@ jobs:
             exit 1
           fi
           echo "L'app è ancora in esecuzione dopo 20 secondi: ok"
+
+          # Prove automatiche dell'uso dell'app, partendo da un'installazione pulita.
+          xcrun simctl uninstall "$UDID" com.tuonome.spese
+          xcodebuild test -project Spese.xcodeproj -scheme Spese -destination "id=$UDID" \
+            -derivedDataPath build-test CODE_SIGN_IDENTITY="-"
+          # Schermata dell'app con i dati lasciati dalle prove.
+          xcrun simctl launch "$UDID" com.tuonome.spese
+          sleep 8
+          xcrun simctl io "$UDID" screenshot screenshot.png
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -98,7 +98,7 @@ struct IncomesView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("+" + eur(i.amount)).bold().foregroundStyle(Theme.accent)
+                        Text((i.amount >= 0 ? "+" : "") + eur(i.amount)).bold().foregroundStyle(Theme.accent)
                     }
                 }.onDelete { idx in idx.map { incomes[$0] }.forEach(ctx.delete) }
             }
