@@ -75,14 +75,15 @@ final class SpeseUITests: XCTestCase {
         // La stima giornaliera arriva fino al giorno dello stipendio (il 27, quello predefinito),
         // anche senza aver inserito l'importo dello stipendio.
         let days = giorniAlloStipendio(27)
-        expectText("per \(days) giorni, fino al 27", "La stima giornaliera dovrebbe durare \(days) giorni, fino al 27")
+        expectText("Fino al 27", "La stima giornaliera dovrebbe arrivare fino al 27")
+        expectText("ancora \(days) giorn", "La stima giornaliera dovrebbe durare \(days) giorni")
 
         // Toccando la stima si apre la scelta del periodo dello stipendio.
-        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "fino al 27")).firstMatch.tap()
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Fino al 27")).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Giorni da coprire"].waitForExistence(timeout: 5), "Non si apre la scelta del periodo")
         XCTAssertTrue(app.staticTexts["\(days)"].exists, "Il periodo proposto dovrebbe coprire \(days) giorni")
         app.navigationBars.buttons["Salva"].tap()
-        expectText("per \(days) giorni, fino al 27", "Dopo il salvataggio la stima dovrebbe restare uguale")
+        expectText("ancora \(days) giorn", "Dopo il salvataggio la stima dovrebbe restare uguale")
 
         app.tabBars.buttons["Conti"].tap()
         expectText("820,00", "Dopo la riapertura il totale dovrebbe restare 820 €")
