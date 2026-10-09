@@ -189,7 +189,7 @@ struct HomeView: View {
                 Button { showPeriod = true } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .top) {
-                            Text("Budget giornaliero").font(.footnote.weight(.medium))
+                            Text("Budget giornaliero").font(.footnote.weight(.medium)).lineLimit(1).minimumScaleFactor(0.75)
                             Spacer(minLength: 4)
                             Image(systemName: "calendar.badge.clock").opacity(0.75)
                         }
@@ -198,20 +198,22 @@ struct HomeView: View {
                             Text("/ giorno").font(.subheadline).opacity(0.75)
                         }.lineLimit(1).minimumScaleFactor(0.7)
                         Text("Fino al \(endText) • ancora \(days) \(days == 1 ? "giorno" : "giorni")")
-                            .font(.caption2).opacity(0.75)
+                            .font(.caption2).opacity(0.75).fixedSize(horizontal: false, vertical: true)
                     }
+                    .multilineTextAlignment(.leading)
                     .padding(12).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
                     .background(HeroStyle.mint.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
                 }
                 Button { showPeriod = true } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .top) {
-                            Text("Speso da stipendio (\(startText))").font(.footnote.weight(.medium))
+                            Text("Speso da stipendio (\(startText))").font(.footnote.weight(.medium)).lineLimit(1).minimumScaleFactor(0.7)
                             Spacer(minLength: 4)
                             Image(systemName: "pencil").foregroundStyle(HeroStyle.mint)
                         }
                         Text(eur(spentInPeriod(p))).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
                     }
+                    .multilineTextAlignment(.leading)
                     .padding(12).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
                     .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(HeroStyle.mint, lineWidth: 1.5))
                 }
@@ -391,14 +393,14 @@ struct HomeView: View {
             HStack(spacing: 10) {
                 heroTile {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Carta", systemImage: "creditcard").font(.subheadline).opacity(0.85)
+                        heroLabel("Carta", icon: "creditcard").opacity(0.85)
                         Text(eur(left)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
                     }
                 }
                 Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: 34)
                 heroTile {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Contanti", systemImage: "banknote").font(.subheadline).opacity(0.85)
+                        heroLabel("Contanti", icon: "banknote").opacity(0.85)
                         Text(eur(cashNow)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
                     }
                 }
@@ -409,7 +411,7 @@ struct HomeView: View {
             }
             heroTile {
                 HStack {
-                    Label("Risparmi separati", systemImage: "building.columns").font(.subheadline)
+                    heroLabel("Risparmi separati", icon: "building.columns")
                     Spacer()
                     Text(eur(ledger.savingsTotal)).font(.subheadline.bold())
                 }
@@ -427,6 +429,10 @@ struct HomeView: View {
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func heroLabel(_ title: String, icon: String) -> some View {
+        HStack(spacing: 6) { Image(systemName: icon); Text(title) }.font(.subheadline)
     }
 
     private func heroFlow(_ title: String, icon: String, tint: Color, value: Double) -> some View {
