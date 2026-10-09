@@ -297,7 +297,12 @@ func makeCSV(_ ctx: ModelContext) -> URL? {
 
 struct Backup: Codable {
     struct E: Codable { var amount: Double; var category: String; var date: Date; var note: String
-        var tag: String; var owedBy: String; var owedAmount: Double; var settled: Bool; var method: String? = nil }
+        var tag: String; var owedBy: String; var owedAmount: Double; var settled: Bool; var method: String? = nil
+        var tripID: String? = nil; var originalAmount: Double? = nil; var originalCurrency: String? = nil
+        var rate: Double? = nil; var paidBy: String? = nil; var splitJSON: String? = nil }
+    struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
+        var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
+    struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
     struct I: Codable { var amount: Double; var saved: Double; var kind: String; var date: Date; var note: String }
     struct M: Codable { var amount: Double; var date: Date; var note: String }
     struct C: Codable { var name: String; var icon: String; var colorHex: String; var order: Int; var limit: Double }
@@ -310,6 +315,7 @@ struct Backup: Codable {
     var expenses: [E]; var incomes: [I]; var moves: [M]; var categories: [C]
     var recurring: [R]; var goals: [G]; var account: A?
     var cashMoves: [CM]? = nil; var cashStart: Double? = nil
+    var trips: [T]? = nil; var payments: [P]? = nil
 }
 
 func makeBackup(_ ctx: ModelContext) -> URL? {
@@ -323,7 +329,9 @@ func backupData(_ ctx: ModelContext) -> Data? {
     var b = Backup(expenses: [], incomes: [], moves: [], categories: [], recurring: [], goals: [], account: nil)
     for x in all(Expense.self) {
         b.expenses.append(Backup.E(amount: x.amount, category: x.categoryRaw, date: x.date, note: x.note,
-                                   tag: x.tag, owedBy: x.owedBy, owedAmount: x.owedAmount, settled: x.settled, method: x.method))
+                                   tag: x.tag, owedBy: x.owedBy, owedAmount: x.owedAmount, settled: x.settled, method: x.method,
+                                   tripID: x.tripID, originalAmount: x.originalAmount, originalCurrency: x.originalCurrency,
+                                   rate: x.rate, paidBy: x.paidBy, splitJSON: x.splitJSON))
     }
     for x in all(Income.self) {
         b.incomes.append(Backup.I(amount: x.amount, saved: x.saved, kind: x.kind, date: x.date, note: x.note))
@@ -347,6 +355,9 @@ func backupData(_ ctx: ModelContext) -> Data? {
     }
     b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank) }
     b.cashStart = all(Account.self).first?.cashStart
+    b.trips = all(Trip.self).map { Backup.T(uid: $0.uid, name: $0.name, currency: $0.currency, startDate: $0.startDate, endDate: $0.endDate,
+                                            budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate) }
+    b.payments = all(TripPayment.self).map { Backup.P(tripID: $0.tripID, from: $0.from, to: $0.to, amount: $0.amount, date: $0.date, method: $0.method) }
     let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
     return try? enc.encode(b)
 }
@@ -423,10 +434,13 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         try ctx.delete(model: Expense.self); try ctx.delete(model: Income.self)
         try ctx.delete(model: SavingsMove.self); try ctx.delete(model: CategoryItem.self)
         try ctx.delete(model: Recurring.self); try ctx.delete(model: Goal.self); try ctx.delete(model: Account.self); try ctx.delete(model: CashMove.self)
+        try ctx.delete(model: Trip.self); try ctx.delete(model: TripPayment.self)
     } catch { return false }
     for e in b.expenses {
         let x = Expense(amount: e.amount, categoryName: e.category, date: e.date, note: e.note)
         x.tag = e.tag; x.owedBy = e.owedBy; x.owedAmount = e.owedAmount; x.settled = e.settled; x.method = e.method ?? "carta"
+        x.tripID = e.tripID ?? ""; x.originalAmount = e.originalAmount ?? 0; x.originalCurrency = e.originalCurrency ?? ""
+        x.rate = e.rate ?? 0; x.paidBy = e.paidBy ?? ""; x.splitJSON = e.splitJSON ?? ""
         ctx.insert(x)
     }
     for i in b.incomes { ctx.insert(Income(amount: i.amount, saved: i.saved, kind: i.kind, date: i.date, note: i.note)) }
@@ -436,6 +450,15 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
     }
     for r in b.recurring { ctx.insert(Recurring(name: r.name, amount: r.amount, categoryName: r.categoryName, day: r.day, nextKey: r.nextKey)) }
     for c in b.cashMoves ?? [] { ctx.insert(CashMove(amount: c.amount, date: c.date, note: c.note, kind: c.kind, bank: c.bank)) }
+    for t in b.trips ?? [] {
+        let x = Trip(name: t.name, currency: t.currency, startDate: t.startDate, endDate: t.endDate)
+        x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate
+        ctx.insert(x)
+    }
+    for p in b.payments ?? [] {
+        let x = TripPayment(tripID: p.tripID, from: p.from, to: p.to, amount: p.amount, date: p.date); x.method = p.method
+        ctx.insert(x)
+    }
     for g in b.goals { ctx.insert(Goal(name: g.name, target: g.target, saved: g.saved, deadline: g.deadline)) }
     if let a = b.account {
         let x = Account(startDate: a.startDate)

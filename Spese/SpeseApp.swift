@@ -38,6 +38,13 @@ struct SpeseApp: App {
     var owedAmount: Double = 0
     var settled: Bool = false
     var method: String = "carta"   // carta oppure contanti
+    // Viaggi
+    var tripID: String = ""          // viaggio a cui appartiene ("" = nessuno)
+    var originalAmount: Double = 0   // importo nella valuta locale
+    var originalCurrency: String = "" // valuta locale ("" = euro)
+    var rate: Double = 0             // cambio usato: 1 € = rate nella valuta locale
+    var paidBy: String = ""          // chi ha pagato ("" = io)
+    var splitJSON: String = ""       // divisione: {"Io": 10, "Marco": 10} in euro
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }
@@ -178,7 +185,8 @@ enum SharedStore {
     static let container: ModelContainer = {
         do {
             return try ModelContainer(for: Expense.self, MonthBudget.self, CategoryItem.self, Recurring.self,
-                                      Account.self, Income.self, SavingsMove.self, Goal.self, CashMove.self)
+                                      Account.self, Income.self, SavingsMove.self, Goal.self, CashMove.self,
+                                      Trip.self, TripPayment.self)
         } catch {
             fatalError("Impossibile aprire i dati: \(error)")
         }

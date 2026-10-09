@@ -6,11 +6,15 @@ struct DayPoint: Identifiable { let day: Int; let cum: Double; var id: Int { day
 struct MonthTotal: Identifiable { let id: Int; let label: String; let spent: Double; let income: Double }
 
 struct StatsView: View {
-    @Query private var all: [Expense]
+    @Query private var allRaw: [Expense]
+    @Query private var trips: [Trip]
+    /// Spese che contano nelle statistiche (senza i viaggi tenuti a parte).
+    private var all: [Expense] { statExpenses(allRaw, trips: trips) }
     @Query private var incomes: [Income]
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
+    @Query private var payments: [TripPayment]
 
     private let cal = Calendar.current
 
@@ -19,7 +23,7 @@ struct StatsView: View {
     }
     private var current: [Expense] { inMonth(Date()) }
     private var budget: Double {
-        let l = Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first)
+        let l = Ledger(incomes: incomes, expenses: allRaw, moves: moves, cash: cashMoves, account: accounts.first, payments: payments)
         guard let iv = cal.dateInterval(of: .month, for: Date()) else { return 0 }
         let received = cashMoves.filter { !$0.bank && $0.date >= iv.start && $0.date < iv.end }.reduce(0) { $0 + $1.amount }
         return l.figures(for: Date()).budget + l.cashBalance(asOf: iv.start) + received
@@ -29,7 +33,7 @@ struct StatsView: View {
         let today = cal.component(.day, from: Date())
         var cum = 0.0
         return (1...today).map { d in
-            cum += current.filter { cal.component(.day, from: $0.date) == d }.reduce(0) { $0 + $1.amount }
+            cum += current.filter { cal.component(.day, from: $0.date) == d }.reduce(0) { $0 + $1.myAmount }
             return DayPoint(day: d, cum: cum)
         }
     }
@@ -39,7 +43,7 @@ struct StatsView: View {
             let d = cal.date(byAdding: .month, value: -i, to: Date()) ?? Date()
             let inc = incomes.filter { $0.kind != initialKind && $0.kind != "Rimborso" && cal.isDate($0.date, equalTo: d, toGranularity: .month) }
             return MonthTotal(id: i, label: d.formatted(.dateTime.month(.abbreviated)),
-                              spent: inMonth(d).reduce(0) { $0 + $1.amount },
+                              spent: inMonth(d).reduce(0) { $0 + $1.myAmount },
                               income: inc.reduce(0) { $0 + $1.amount })
         }
     }
@@ -47,7 +51,7 @@ struct StatsView: View {
     var body: some View {
         NavigationStack {
             List {
-                let total = current.reduce(0) { $0 + $1.amount }
+                let total = current.reduce(0) { $0 + $1.myAmount }
                 let today = max(cal.component(.day, from: Date()), 1)
                 PeriodSummariesLinks()
                 Section("Questo mese") {
