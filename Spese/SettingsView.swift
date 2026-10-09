@@ -37,6 +37,7 @@ struct SettingsView: View {
                     if reminderOn { Stepper("Ora: \(reminderHour):00", value: $reminderHour, in: 6...23) }
                 }
                 Section("Dati") {
+                    NavigationLink { AutoBackupView() } label: { Label("Backup automatico", systemImage: "icloud.and.arrow.up") }
                     if let u = csvURL { ShareLink(item: u) { Label("Esporta in CSV (Excel)", systemImage: "tablecells") } }
                     if let u = backupURL { ShareLink(item: u) { Label("Salva un backup", systemImage: "externaldrive") } }
                     Button { importing = true } label: { Label("Ripristina da backup", systemImage: "arrow.counterclockwise") }
@@ -75,19 +76,66 @@ struct SettingsView: View {
 struct CategoriesView: View {
     @Environment(\.modelContext) private var ctx
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @Query private var accounts: [Account]
     @State private var editing: CategoryItem?
     @State private var adding = false
+    @AppStorage(limitPeriodOnKey) private var limitOn = false
+    @AppStorage(limitStartKey) private var limitStart: Double = 0
+    @AppStorage(limitEndKey) private var limitEnd: Double = 0
+
+    private let cal = Calendar.current
+    private var pay: (start: Date, end: Date)? {
+        accounts.first.flatMap { payPeriod(day: $0.salaryDay, customStart: $0.periodStart, customEnd: $0.periodEnd) }
+    }
+    /// "Dal": primo giorno del periodo.
+    private var fromDate: Binding<Date> {
+        Binding(get: { limitStart > 0 ? Date(timeIntervalSinceReferenceDate: limitStart) : cal.startOfDay(for: Date()) },
+                set: { v in
+                    limitStart = cal.startOfDay(for: v).timeIntervalSinceReferenceDate
+                    if limitEnd <= limitStart { limitEnd = (cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: v)) ?? v).timeIntervalSinceReferenceDate }
+                })
+    }
+    /// "Al": ultimo giorno incluso (si salva il giorno dopo).
+    private var toDate: Binding<Date> {
+        Binding(get: {
+                    let end = limitEnd > 0 ? Date(timeIntervalSinceReferenceDate: limitEnd) : Date()
+                    return cal.date(byAdding: .day, value: -1, to: end) ?? end
+                },
+                set: { v in limitEnd = (cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: v)) ?? v).timeIntervalSinceReferenceDate })
+    }
+    private func useSalaryPeriod() {
+        guard let p = pay else { return }
+        limitStart = p.start.timeIntervalSinceReferenceDate
+        limitEnd = p.end.timeIntervalSinceReferenceDate
+    }
 
     var body: some View {
         List {
-            ForEach(cats) { c in
-                Button { editing = c } label: {
-                    Label { Text(c.name).foregroundStyle(.primary) }
-                    icon: { Image(systemName: c.icon).foregroundStyle(Color(hex: c.colorHex)) }
+            Section {
+                Toggle("Limiti su un periodo scelto da me", isOn: $limitOn)
+                    .onChange(of: limitOn) { _, on in if on && limitEnd <= Date().timeIntervalSinceReferenceDate { useSalaryPeriod() } }
+                if limitOn {
+                    DatePicker("Dal", selection: fromDate, displayedComponents: .date)
+                    DatePicker("Al", selection: toDate, in: fromDate.wrappedValue..., displayedComponents: .date)
+                    Button("Usa il periodo dello stipendio") { useSalaryPeriod() }
                 }
-            }.onDelete { i in i.map { cats[$0] }.forEach(ctx.delete) }
+            } header: {
+                Text("Periodo dei limiti")
+            } footer: {
+                Text(limitOn
+                     ? "I limiti si contano dal giorno \"Dal\" al giorno \"Al\" compresi. Finito questo periodo seguono da soli il periodo dello stipendio, finché non scegli nuove date."
+                     : "Spento: i limiti si contano sul mese di calendario, dal primo all'ultimo giorno.")
+            }
+            Section("Categorie") {
+                ForEach(cats) { c in
+                    Button { editing = c } label: {
+                        Label { Text(c.name).foregroundStyle(.primary) }
+                        icon: { Image(systemName: c.icon).foregroundStyle(Color(hex: c.colorHex)) }
+                    }
+                }.onDelete { i in i.map { cats[$0] }.forEach(ctx.delete) }
+            }
         }
-        .navigationTitle("Categorie")
+        .navigationTitle("Categorie e limiti")
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .sheet(item: $editing) { CategoryEditor(cat: $0, count: cats.count) }
         .sheet(isPresented: $adding) { CategoryEditor(cat: nil, count: cats.count) }
@@ -146,6 +194,7 @@ struct CategoryEditor: View {
                 ex.forEach { $0.categoryRaw = n }
                 let rc = (try? ctx.fetch(FetchDescriptor<Recurring>(predicate: #Predicate { $0.categoryName == old }))) ?? []
                 rc.forEach { $0.categoryName = n }
+                renameLearnedCategory(from: old, to: n)
             }
             c.name = n; c.icon = icon; c.colorHex = color.hex; c.limit = parseAmount(limitText) ?? 0
         } else {
@@ -217,6 +266,68 @@ struct RecurringEditor: View {
                 }
             }
             .onAppear { if catName.isEmpty { catName = cats.first?.name ?? "Altro" } }
+        }
+    }
+}
+
+// MARK: - Backup automatico
+
+struct AutoBackupView: View {
+    @Environment(\.modelContext) private var ctx
+    @State private var folder: URL? = autoBackupFolder()
+    @State private var last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+    @State private var picking = false
+    @State private var message = ""
+
+    var body: some View {
+        List {
+            Section {
+                Text("Scegli una cartella in iCloud Drive: una volta a settimana l'app ci salva da sola una copia di tutti i dati. Così non perdi niente anche se cancelli l'app o cambi iPhone. Vengono tenuti gli ultimi 8 backup.")
+                    .font(.subheadline)
+            }
+            if let folder {
+                Section("Attivo") {
+                    HStack { Text("Cartella"); Spacer(); Text(folder.lastPathComponent).foregroundStyle(.secondary) }
+                    HStack {
+                        Text("Ultimo backup"); Spacer()
+                        Text(last.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "mai").foregroundStyle(.secondary)
+                    }
+                    Button { backupNow() } label: { Label("Fai il backup adesso", systemImage: "arrow.clockwise") }
+                    Button { picking = true } label: { Label("Cambia cartella", systemImage: "folder") }
+                    Button("Disattiva il backup automatico", role: .destructive) {
+                        UserDefaults.standard.removeObject(forKey: autoBackupFolderKey)
+                        self.folder = nil; message = ""
+                    }
+                }
+            } else {
+                Section {
+                    Button { picking = true } label: { Label("Scegli la cartella e attiva", systemImage: "folder.badge.plus").bold() }
+                }
+            }
+            if !message.isEmpty { Section { Text(message).font(.footnote).foregroundStyle(.secondary) } }
+            Section {
+                Text("Per ripristinare: Altro → Ripristina da backup, poi scegli il file Spese-backup con la data più recente.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Backup automatico")
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
+            guard case .success(let url) = r else { return }
+            if setAutoBackupFolder(url) {
+                folder = autoBackupFolder()
+                backupNow()
+            } else {
+                message = "Non riesco a usare questa cartella. Prova a sceglierne un'altra."
+            }
+        }
+    }
+
+    private func backupNow() {
+        if let err = runAutoBackup(ctx, force: true) {
+            message = err
+        } else {
+            last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+            message = "Backup salvato."
         }
     }
 }

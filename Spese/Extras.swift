@@ -126,6 +126,8 @@ struct AddExpenseView: View {
         let owed = shared ? min(parseAmount(owedText) ?? 0, a) : 0
         let by = shared ? owedBy.trimmingCharacters(in: .whitespaces) : ""
         if let e = editing {
+            // Se la categoria viene corretta, l'app la ricorda per questo esercente.
+            if e.categoryRaw != catName { learnCategory(merchant: note, category: catName) }
             e.amount = a; e.categoryRaw = catName; e.date = date; e.note = note; e.tag = t
             e.owedAmount = owed; e.owedBy = by; e.method = method
             if owed == 0 { e.settled = false }
@@ -311,6 +313,12 @@ struct Backup: Codable {
 }
 
 func makeBackup(_ ctx: ModelContext) -> URL? {
+    guard let data = backupData(ctx) else { return nil }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("Spese-backup.json")
+    do { try data.write(to: url); return url } catch { return nil }
+}
+
+func backupData(_ ctx: ModelContext) -> Data? {
     func all<T: PersistentModel>(_ t: T.Type) -> [T] { (try? ctx.fetch(FetchDescriptor<T>())) ?? [] }
     var b = Backup(expenses: [], incomes: [], moves: [], categories: [], recurring: [], goals: [], account: nil)
     for x in all(Expense.self) {
@@ -340,8 +348,70 @@ func makeBackup(_ ctx: ModelContext) -> URL? {
     b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank) }
     b.cashStart = all(Account.self).first?.cashStart
     let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("Spese-backup.json")
-    do { try enc.encode(b).write(to: url); return url } catch { return nil }
+    return try? enc.encode(b)
+}
+
+// MARK: - Backup automatico
+
+let autoBackupFolderKey = "autoBackupFolder"
+let autoBackupLastKey = "autoBackupLast"
+
+/// Scrive un backup con la data nel nome e tiene solo gli ultimi `keep`.
+@discardableResult
+func writeBackup(_ ctx: ModelContext, to folder: URL, now: Date = Date(), keep: Int = 8) throws -> URL {
+    guard let data = backupData(ctx) else { throw CocoaError(.fileWriteUnknown) }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+    let url = folder.appendingPathComponent("Spese-backup-\(f.string(from: now)).json")
+    try data.write(to: url, options: .atomic)
+    let fm = FileManager.default
+    let backups = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+        .filter { $0.lastPathComponent.hasPrefix("Spese-backup-") && $0.pathExtension == "json" }
+        .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    for old in backups.dropFirst(keep) { try? fm.removeItem(at: old) }
+    return url
+}
+
+/// Il backup automatico si fa una volta a settimana.
+func autoBackupDue(last: Date?, now: Date = Date()) -> Bool {
+    guard let last else { return true }
+    return now.timeIntervalSince(last) >= 7 * 24 * 3600
+}
+
+/// Cartella scelta dall'utente (per esempio in iCloud Drive), ricordata con un segnalibro.
+func autoBackupFolder() -> URL? {
+    guard let d = UserDefaults.standard.data(forKey: autoBackupFolderKey) else { return nil }
+    var stale = false
+    guard let url = try? URL(resolvingBookmarkData: d, bookmarkDataIsStale: &stale) else { return nil }
+    if stale, let fresh = try? url.bookmarkData() { UserDefaults.standard.set(fresh, forKey: autoBackupFolderKey) }
+    return url
+}
+
+func setAutoBackupFolder(_ url: URL) -> Bool {
+    let access = url.startAccessingSecurityScopedResource()
+    defer { if access { url.stopAccessingSecurityScopedResource() } }
+    guard let d = try? url.bookmarkData() else { return false }
+    UserDefaults.standard.set(d, forKey: autoBackupFolderKey)
+    return true
+}
+
+/// Fa il backup nella cartella scelta se è passata una settimana (o subito con `force`).
+/// Restituisce un messaggio d'errore, oppure nil se è andato bene o non serviva.
+@discardableResult
+func runAutoBackup(_ ctx: ModelContext, force: Bool = false) -> String? {
+    let last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+    guard force || autoBackupDue(last: last) else { return nil }
+    guard let folder = autoBackupFolder() else { return "Scegli prima una cartella." }
+    let access = folder.startAccessingSecurityScopedResource()
+    defer { if access { folder.stopAccessingSecurityScopedResource() } }
+    do {
+        try? ctx.save()
+        try writeBackup(ctx, to: folder)
+        UserDefaults.standard.set(Date(), forKey: autoBackupLastKey)
+        return nil
+    } catch {
+        return "Backup non riuscito: \(error.localizedDescription)"
+    }
 }
 
 func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {

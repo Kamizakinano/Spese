@@ -110,10 +110,13 @@ struct Ledger {
         func inc(_ a: Date, _ b: Date) -> Double {
             incomes.filter { $0.date >= a && $0.date < b }.reduce(0) { $0 + $1.amount - $1.saved }
         }
+        // Il saldo iniziale inserito alla prima apertura non è un'entrata: conta come soldi già in banca.
+        let initial = incomes.filter { $0.kind == initialKind && $0.date >= iv.start && $0.date < iv.end }
+            .reduce(0) { $0 + $1.amount - $1.saved }
         var f = Figures()
         let past = Date.distantPast
-        f.startAvail = inc(past, iv.start) - ex(past, iv.start) - mv(past, iv.start) - tr(past, iv.start)
-        f.incomeNet = inc(iv.start, iv.end)
+        f.startAvail = inc(past, iv.start) - ex(past, iv.start) - mv(past, iv.start) - tr(past, iv.start) + initial
+        f.incomeNet = inc(iv.start, iv.end) - initial
         f.spent = ex(iv.start, iv.end)
         f.moved = mv(iv.start, iv.end) + tr(iv.start, iv.end)
         return f

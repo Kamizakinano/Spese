@@ -49,6 +49,7 @@ struct StatsView: View {
             List {
                 let total = current.reduce(0) { $0 + $1.amount }
                 let today = max(cal.component(.day, from: Date()), 1)
+                PeriodSummariesLinks()
                 Section("Questo mese") {
                     HStack { Text("Media giornaliera"); Spacer(); Text(eur(total / Double(today))).bold() }
                     HStack { Text("Numero di spese"); Spacer(); Text("\(current.count)").bold() }
