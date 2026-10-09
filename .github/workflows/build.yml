@@ -2,28 +2,78 @@ name: Build IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
       - name: Genera il progetto Xcode
         run: |
           brew install xcodegen
           xcodegen generate
-      - name: Compila (senza firma)
+
+      - name: Prova sul simulatore (l'app deve avviarsi senza crash)
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          print(next(x["udid"] for k, v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone")))')
+          echo "Simulatore: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild -project Spese.xcodeproj -scheme Spese \
+            -configuration Release -sdk iphonesimulator -destination "id=$UDID" \
+            -derivedDataPath build-sim CODE_SIGN_IDENTITY="-" build
+          xcrun simctl install "$UDID" build-sim/Build/Products/Release-iphonesimulator/Spese.app
+          PID=$(xcrun simctl launch "$UDID" com.tuonome.spese | awk '{print $NF}')
+          echo "Avviata con PID $PID"
+          sleep 20
+          xcrun simctl io "$UDID" screenshot screenshot.png
+          if ! ps -p "$PID" > /dev/null; then
+            echo "::error::L'app si è chiusa da sola (crash) dopo l'avvio"
+            ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i spese && \
+              cat ~/Library/Logs/DiagnosticReports/*Spese* | head -150
+            exit 1
+          fi
+          echo "L'app è ancora in esecuzione dopo 20 secondi: ok"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-simulatore
+          path: screenshot.png
+          if-no-files-found: ignore
+
+      - name: Compila per iPhone (senza firma)
         run: |
           xcodebuild -project Spese.xcodeproj -scheme Spese \
             -configuration Release -sdk iphoneos -derivedDataPath build \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
       - name: Crea l'IPA
         run: |
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/Spese.app Payload/
           zip -r Spese.ipa Payload
+
       - uses: actions/upload-artifact@v4
         with:
           name: Spese-ipa
           path: Spese.ipa
+
+      - name: Pubblica l'IPA nella Release "ultima-versione"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima-versione --yes --cleanup-tag || true
+          gh release create ultima-versione Spese.ipa \
+            --target "$GITHUB_SHA" --latest \
+            --title "Spese – build ${{ github.run_number }}" \
+            --notes "Compilata da ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Testata sul simulatore. Scarica Spese.ipa e installala con Sideloadly."
