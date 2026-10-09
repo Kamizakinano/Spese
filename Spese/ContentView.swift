@@ -94,6 +94,7 @@ struct HomeView: View {
 
     @State private var month = Date()
     @State private var showAdd = false
+    @State private var showPeriod = false
     @State private var search = ""
     @State private var filterCat = ""
     @State private var filterMethod = ""
@@ -138,17 +139,34 @@ struct HomeView: View {
     }
     private var shown: [Expense] { (search.isEmpty ? expenses : all).filter(matches) }
 
-    /// Quanto si può spendere al giorno fino al prossimo giorno di stipendio (anche se l'importo non è impostato).
-    private var perDayText: String? {
-        let cal = Calendar.current
-        guard totalAvailable > 0, cal.isDate(month, equalTo: Date(), toGranularity: .month) else { return nil }
-        if let a = accounts.first, let pay = nextPayday(day: a.salaryDay),
-           let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: pay).day, days > 0 {
-            return "\(eur(totalAvailable / Double(days))) al giorno per \(days) giorni, fino allo stipendio del \(pay.formatted(.dateTime.day().month(.wide)))"
+    /// Periodo dall'ultimo stipendio al prossimo (scelto dall'utente o calcolato dal giorno di accredito).
+    private var period: (start: Date, end: Date)? {
+        guard let a = accounts.first else { return nil }
+        return payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd)
+    }
+    private func spentInPeriod(_ p: (start: Date, end: Date)) -> Double {
+        all.filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.amount }
+    }
+
+    /// Quanto si può spendere al giorno fino al prossimo stipendio. Toccandolo si sceglie il periodo.
+    @ViewBuilder private var perDay: some View {
+        if Calendar.current.isDate(month, equalTo: Date(), toGranularity: .month), let p = period {
+            let days = max(daysLeft(until: p.end), 1)
+            let endText = p.end.formatted(.dateTime.day().month(.wide))
+            Button { showPeriod = true } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(totalAvailable > 0
+                         ? "\(eur(totalAvailable / Double(days))) al giorno per \(days) giorni, fino al \(endText)"
+                         : "Niente da spendere fino al \(endText) (\(days) giorni)")
+                    HStack(spacing: 4) {
+                        Text("Dallo stipendio del \(p.start.formatted(.dateTime.day().month(.wide))) hai speso \(eur(spentInPeriod(p)))")
+                        Image(systemName: "pencil.circle")
+                    }.opacity(0.85)
+                }
+                .font(.footnote).foregroundStyle(.white).multilineTextAlignment(.leading)
+            }
+            .buttonStyle(.borderless)
         }
-        guard let r = cal.range(of: .day, in: .month, for: Date()) else { return nil }
-        let days = r.count - cal.component(.day, from: Date()) + 1
-        return "\(eur(totalAvailable / Double(days))) al giorno per \(days) giorni"
     }
 
     var body: some View {
@@ -259,6 +277,7 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showAdd) { AddExpenseView(defaultDate: defaultDate()) }
             .sheet(item: $editing) { AddExpenseView(defaultDate: $0.date, editing: $0) }
+            .sheet(isPresented: $showPeriod) { PayPeriodEditor() }
             .onChange(of: total) { _, _ in checkAlerts() }
             .onChange(of: budget) { _, _ in checkAlerts() }
         }
@@ -279,7 +298,7 @@ struct HomeView: View {
                 Text("Entrate \(eur(fig.incomeNet))")
             }.font(.footnote)
             Text("Risparmi separati: \(eur(ledger.savingsTotal))").font(.footnote).opacity(0.85)
-            if let t = perDayText { Text(t).font(.footnote).opacity(0.9) }
+            perDay
         }
         .foregroundStyle(.white).padding(18).frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient(colors: totalAvailable < 0 ? [Color.red, Color.orange] : [Theme.accent, Color(hex: "0F6E56")],
@@ -325,3 +344,64 @@ struct HomeView: View {
     }
 }
 
+
+// MARK: - Periodo dello stipendio
+
+/// Si indica quando è arrivato lo stipendio e quando arriverà il prossimo:
+/// la cifra al giorno si calcola fino a quella data.
+struct PayPeriodEditor: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    @Query private var accounts: [Account]
+    @State private var start = Date()
+    @State private var end = Date()
+
+    private var cal: Calendar { Calendar.current }
+    private var tomorrow: Date { cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date() }
+    private var day: Int { accounts.first?.salaryDay ?? 27 }
+    private var isCustom: Bool { (accounts.first?.periodEnd).map { $0 > Date() } ?? false }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("Stipendio ricevuto il", selection: $start, in: ...Date(), displayedComponents: .date)
+                    DatePicker("Prossimo stipendio il", selection: $end, in: tomorrow..., displayedComponents: .date)
+                    HStack { Text("Giorni da coprire"); Spacer(); Text("\(max(daysLeft(until: end), 1))").bold() }
+                } footer: {
+                    Text("La cifra al giorno vale fino al giorno prima del prossimo stipendio. Passata quella data l'app torna al calcolo automatico (giorno \(day) di ogni mese, si cambia in Altro → Stipendio e risparmi).")
+                }
+                if isCustom {
+                    Section {
+                        Button("Usa il calcolo automatico (giorno \(day))", role: .destructive) {
+                            accounts.first?.periodStart = nil
+                            accounts.first?.periodEnd = nil
+                            try? ctx.save()
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Periodo dello stipendio").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Salva") {
+                        if let a = accounts.first {
+                            a.periodStart = cal.startOfDay(for: start)
+                            a.periodEnd = cal.startOfDay(for: end)
+                            try? ctx.save()
+                        }
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                if let a = accounts.first, let p = payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd) {
+                    start = p.start; end = max(p.end, tomorrow)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}

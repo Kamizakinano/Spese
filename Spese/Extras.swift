@@ -303,7 +303,8 @@ struct Backup: Codable {
     struct G: Codable { var name: String; var target: Double; var saved: Double; var deadline: Date }
     struct CM: Codable { var amount: Double; var date: Date; var note: String; var kind: String; var bank: Bool }
     struct A: Codable { var startDate: Date; var salaryAmount: Double; var salaryDay: Int
-        var salaryMode: Int; var salaryValue: Double; var salaryNextKey: String }
+        var salaryMode: Int; var salaryValue: Double; var salaryNextKey: String
+        var periodStart: Date? = nil; var periodEnd: Date? = nil }
     var expenses: [E]; var incomes: [I]; var moves: [M]; var categories: [C]
     var recurring: [R]; var goals: [G]; var account: A?
     var cashMoves: [CM]? = nil; var cashStart: Double? = nil
@@ -333,7 +334,8 @@ func makeBackup(_ ctx: ModelContext) -> URL? {
     }
     if let x = all(Account.self).first {
         b.account = Backup.A(startDate: x.startDate, salaryAmount: x.salaryAmount, salaryDay: x.salaryDay,
-                             salaryMode: x.salaryMode, salaryValue: x.salaryValue, salaryNextKey: x.salaryNextKey)
+                             salaryMode: x.salaryMode, salaryValue: x.salaryValue, salaryNextKey: x.salaryNextKey,
+                             periodStart: x.periodStart, periodEnd: x.periodEnd)
     }
     b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank) }
     b.cashStart = all(Account.self).first?.cashStart
@@ -369,6 +371,7 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         let x = Account(startDate: a.startDate)
         x.salaryAmount = a.salaryAmount; x.salaryDay = a.salaryDay; x.salaryMode = a.salaryMode
         x.salaryValue = a.salaryValue; x.salaryNextKey = a.salaryNextKey; x.cashStart = b.cashStart ?? 0
+        x.periodStart = a.periodStart; x.periodEnd = a.periodEnd
         ctx.insert(x)
     }
     return true

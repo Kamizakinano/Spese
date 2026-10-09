@@ -15,7 +15,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "2.2"
+        MARKETING_VERSION: "2.3"
         CURRENT_PROJECT_VERSION: "3"
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -33,11 +33,25 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.tuonome.spese.uitests
         TEST_TARGET_NAME: Spese
         SWIFT_VERSION: "5.0"
+  SpeseTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SpeseTests]
+    dependencies:
+      - target: Spese
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.tuonome.spese.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Spese.app/Spese"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_VERSION: "5.0"
 schemes:
   Spese:
     build:
       targets:
         Spese: all
+        SpeseTests: [test]
         SpeseUITests: [test]
     test:
-      targets: [SpeseUITests]
+      targets: [SpeseTests, SpeseUITests]
