@@ -52,6 +52,7 @@ final class SpeseUITests: XCTestCase {
             springboard.buttons[name].tap()
         }
         type("1000", into: bank)
+        type("1500", into: app.textFields["Importo stipendio (€)"])   // giorno di accredito: 27
         type("50", into: app.textFields["Contanti che ho adesso (€)"])
         let start = app.buttons["Inizia"]
         var tries = 0
@@ -71,7 +72,25 @@ final class SpeseUITests: XCTestCase {
         // I valori restano anche riaprendo l'app.
         app.terminate()
         app.launch()
+
+        // La stima giornaliera arriva fino al prossimo stipendio (il 27), non a fine mese.
+        let days = giorniAlloStipendio(27)
+        expectText("per \(days) giorni, fino allo stipendio del 27", "La stima giornaliera dovrebbe durare \(days) giorni, fino al 27")
+
         app.tabBars.buttons["Conti"].tap()
         expectText("820,00", "Dopo la riapertura il totale dovrebbe restare 820 €")
+    }
+
+    /// Conta i giorni da oggi al prossimo giorno `day` (escluso oggi), contando un giorno alla volta.
+    private func giorniAlloStipendio(_ day: Int) -> Int {
+        let cal = Calendar.current
+        var d = cal.startOfDay(for: Date())
+        for n in 1...62 {
+            d = cal.date(byAdding: .day, value: 1, to: d)!
+            let dom = cal.component(.day, from: d)
+            let last = cal.range(of: .day, in: .month, for: d)!.count
+            if dom == min(day, last) { return n }
+        }
+        return -1
     }
 }
