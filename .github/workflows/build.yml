@@ -27,6 +27,19 @@ jobs:
           echo "Simulatore: $UDID"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+
+          # Prima installa la versione 1.0, così si prova anche l'aggiornamento
+          # sopra i dati salvati da una versione precedente (come su un iPhone vero).
+          git fetch -q --depth=1 origin 1f8fd4303b259d9e6262fb4858c7c266f48524a2
+          mkdir v1 && git archive 1f8fd4303b259d9e6262fb4858c7c266f48524a2 | tar -x -C v1
+          (cd v1 && xcodegen generate && xcodebuild -project Spese.xcodeproj -scheme Spese \
+            -configuration Release -sdk iphonesimulator -destination "id=$UDID" \
+            -derivedDataPath build-sim CODE_SIGN_IDENTITY="-" build -quiet)
+          xcrun simctl install "$UDID" v1/build-sim/Build/Products/Release-iphonesimulator/Spese.app
+          xcrun simctl launch "$UDID" com.tuonome.spese
+          sleep 10
+          xcrun simctl terminate "$UDID" com.tuonome.spese || true
+
           xcodebuild -project Spese.xcodeproj -scheme Spese \
             -configuration Release -sdk iphonesimulator -destination "id=$UDID" \
             -derivedDataPath build-sim CODE_SIGN_IDENTITY="-" build
@@ -73,7 +86,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete ultima-versione --yes --cleanup-tag || true
-          gh release create ultima-versione Spese.ipa \
+          cp screenshot.png schermata-simulatore.png
+          gh release create ultima-versione Spese.ipa schermata-simulatore.png \
             --target "$GITHUB_SHA" --latest \
             --title "Spese – build ${{ github.run_number }}" \
             --notes "Compilata da ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Testata sul simulatore. Scarica Spese.ipa e installala con Sideloadly."

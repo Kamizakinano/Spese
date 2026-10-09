@@ -1,0 +1,222 @@
+import SwiftUI
+import SwiftData
+import UniformTypeIdentifiers
+import UserNotifications
+
+struct SettingsView: View {
+    @Environment(\.modelContext) private var ctx
+    @AppStorage("theme") private var theme = 0
+    @AppStorage("reminderOn") private var reminderOn = false
+    @AppStorage("reminderHour") private var reminderHour = 21
+    @State private var csvURL: URL?
+    @State private var backupURL: URL?
+    @State private var importing = false
+    @State private var confirmRestore = false
+    @State private var pickedURL: URL?
+    @State private var message = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Aspetto") {
+                    Picker("Tema", selection: $theme) {
+                        Text("Sistema").tag(0); Text("Chiaro").tag(1); Text("Scuro").tag(2)
+                    }.pickerStyle(.segmented)
+                }
+                Section("Personalizza") {
+                    NavigationLink { SalaryView() } label: { Label("Stipendio e risparmi", systemImage: "eurosign.circle") }
+                    NavigationLink { CategoriesView() } label: { Label("Categorie e limiti", systemImage: "square.grid.2x2") }
+                    NavigationLink { RecurringView() } label: { Label("Spese ricorrenti", systemImage: "repeat") }
+                    NavigationLink { TagsView() } label: { Label("Viaggi e tag", systemImage: "tag") }
+                    NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
+                    NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
+                }
+                Section("Sicurezza e promemoria") {
+                    LockToggle()
+                    Toggle("Promemoria giornaliero", isOn: $reminderOn)
+                    if reminderOn { Stepper("Ora: \(reminderHour):00", value: $reminderHour, in: 6...23) }
+                }
+                Section("Dati") {
+                    if let u = csvURL { ShareLink(item: u) { Label("Esporta in CSV (Excel)", systemImage: "tablecells") } }
+                    if let u = backupURL { ShareLink(item: u) { Label("Salva un backup", systemImage: "externaldrive") } }
+                    Button { importing = true } label: { Label("Ripristina da backup", systemImage: "arrow.counterclockwise") }
+                    if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                }
+                Section {
+                    HStack {
+                        Text("Versione")
+                        Spacer()
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("Notifiche") {
+                    Text("Avvisi quando raggiungi l'80% e il 100% del disponibile e dei limiti per categoria.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Altro")
+            .onAppear { csvURL = makeCSV(ctx); backupURL = makeBackup(ctx) }
+            .onChange(of: reminderOn) { _, v in scheduleReminder(on: v, hour: reminderHour) }
+            .onChange(of: reminderHour) { _, h in if reminderOn { scheduleReminder(on: true, hour: h) } }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
+                if case .success(let u) = r { pickedURL = u; confirmRestore = true }
+            }
+            .confirmationDialog("Il ripristino sostituisce tutti i dati attuali.", isPresented: $confirmRestore, titleVisibility: .visible) {
+                Button("Ripristina", role: .destructive) {
+                    if let u = pickedURL { message = restoreBackup(ctx, from: u) ? "Backup ripristinato." : "File non valido." }
+                }
+                Button("Annulla", role: .cancel) {}
+            }
+        }
+    }
+}
+
+struct CategoriesView: View {
+    @Environment(\.modelContext) private var ctx
+    @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @State private var editing: CategoryItem?
+    @State private var adding = false
+
+    var body: some View {
+        List {
+            ForEach(cats) { c in
+                Button { editing = c } label: {
+                    Label { Text(c.name).foregroundStyle(.primary) }
+                    icon: { Image(systemName: c.icon).foregroundStyle(Color(hex: c.colorHex)) }
+                }
+            }.onDelete { i in i.map { cats[$0] }.forEach(ctx.delete) }
+        }
+        .navigationTitle("Categorie")
+        .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
+        .sheet(item: $editing) { CategoryEditor(cat: $0, count: cats.count) }
+        .sheet(isPresented: $adding) { CategoryEditor(cat: nil, count: cats.count) }
+    }
+}
+
+struct CategoryEditor: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    let cat: CategoryItem?
+    let count: Int
+    @State private var name = ""
+    @State private var icon = "cart"
+    @State private var color = Color.green
+    @State private var limitText = ""
+    private let icons = ["cart", "fork.knife", "cup.and.saucer", "airplane", "car", "bus", "house", "bolt",
+                         "cross.case", "pills", "popcorn", "gamecontroller", "bag", "tshirt", "gift", "book",
+                         "graduationcap", "pawprint", "dumbbell", "wifi", "phone", "fuelpump", "heart", "star", "ellipsis.circle"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Nome", text: $name)
+                ColorPicker("Colore", selection: $color, supportsOpacity: false)
+                TextField("Limite mensile (€, facoltativo)", text: $limitText).keyboardType(.decimalPad)
+                Section("Icona") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                        ForEach(icons, id: \.self) { s in
+                            Image(systemName: s).font(.title2).foregroundStyle(color)
+                                .frame(width: 46, height: 46)
+                                .background(icon == s ? color.opacity(0.25) : Color.clear, in: Circle())
+                                .onTapGesture { icon = s }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(cat == nil ? "Nuova categoria" : "Modifica categoria")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Salva") { save() } }
+            }
+            .onAppear {
+                if let c = cat { name = c.name; icon = c.icon; color = Color(hex: c.colorHex); limitText = c.limit > 0 ? String(c.limit) : "" }
+            }
+        }
+    }
+
+    private func save() {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        if let c = cat {
+            let old = c.name
+            if old != n {
+                let ex = (try? ctx.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.categoryRaw == old }))) ?? []
+                ex.forEach { $0.categoryRaw = n }
+                let rc = (try? ctx.fetch(FetchDescriptor<Recurring>(predicate: #Predicate { $0.categoryName == old }))) ?? []
+                rc.forEach { $0.categoryName = n }
+            }
+            c.name = n; c.icon = icon; c.colorHex = color.hex; c.limit = parseAmount(limitText) ?? 0
+        } else {
+            let ci = CategoryItem(name: n, icon: icon, colorHex: color.hex, order: count)
+            ci.limit = parseAmount(limitText) ?? 0
+            ctx.insert(ci)
+        }
+        dismiss()
+    }
+}
+
+struct RecurringView: View {
+    @Environment(\.modelContext) private var ctx
+    @Query private var items: [Recurring]
+    @State private var adding = false
+
+    var body: some View {
+        List {
+            if items.isEmpty {
+                Text("Nessuna spesa ricorrente. Aggiungi affitto, abbonamenti, ecc.: verranno inserite da sole ogni mese.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(items) { r in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(r.name)
+                        Text("\(r.categoryName) · il giorno \(r.day) di ogni mese").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(eur(r.amount)).bold()
+                }
+            }.onDelete { i in i.map { items[$0] }.forEach(ctx.delete) }
+        }
+        .navigationTitle("Spese ricorrenti")
+        .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
+        .sheet(isPresented: $adding) { RecurringEditor() }
+    }
+}
+
+struct RecurringEditor: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @State private var name = ""
+    @State private var amountText = ""
+    @State private var catName = ""
+    @State private var day = 1
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Nome (es. Affitto, Netflix)", text: $name)
+                TextField("Importo (€)", text: $amountText).keyboardType(.decimalPad)
+                Picker("Categoria", selection: $catName) {
+                    ForEach(cats) { c in Label(c.name, systemImage: c.icon).tag(c.name) }
+                }
+                Stepper("Giorno del mese: \(day)", value: $day, in: 1...31)
+            }
+            .navigationTitle("Nuova ricorrente").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Salva") {
+                        let n = name.trimmingCharacters(in: .whitespaces)
+                        guard !n.isEmpty, let a = parseAmount(amountText), a > 0 else { return }
+                        ctx.insert(Recurring(name: n, amount: a, categoryName: catName, day: day, nextKey: monthKey(Date())))
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear { if catName.isEmpty { catName = cats.first?.name ?? "Altro" } }
+        }
+    }
+}
