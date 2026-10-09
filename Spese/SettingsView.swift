@@ -37,6 +37,7 @@ struct SettingsView: View {
                     if reminderOn { Stepper("Ora: \(reminderHour):00", value: $reminderHour, in: 6...23) }
                 }
                 Section("Dati") {
+                    NavigationLink { AutoBackupView() } label: { Label("Backup automatico", systemImage: "icloud.and.arrow.up") }
                     if let u = csvURL { ShareLink(item: u) { Label("Esporta in CSV (Excel)", systemImage: "tablecells") } }
                     if let u = backupURL { ShareLink(item: u) { Label("Salva un backup", systemImage: "externaldrive") } }
                     Button { importing = true } label: { Label("Ripristina da backup", systemImage: "arrow.counterclockwise") }
@@ -146,6 +147,7 @@ struct CategoryEditor: View {
                 ex.forEach { $0.categoryRaw = n }
                 let rc = (try? ctx.fetch(FetchDescriptor<Recurring>(predicate: #Predicate { $0.categoryName == old }))) ?? []
                 rc.forEach { $0.categoryName = n }
+                renameLearnedCategory(from: old, to: n)
             }
             c.name = n; c.icon = icon; c.colorHex = color.hex; c.limit = parseAmount(limitText) ?? 0
         } else {
@@ -217,6 +219,68 @@ struct RecurringEditor: View {
                 }
             }
             .onAppear { if catName.isEmpty { catName = cats.first?.name ?? "Altro" } }
+        }
+    }
+}
+
+// MARK: - Backup automatico
+
+struct AutoBackupView: View {
+    @Environment(\.modelContext) private var ctx
+    @State private var folder: URL? = autoBackupFolder()
+    @State private var last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+    @State private var picking = false
+    @State private var message = ""
+
+    var body: some View {
+        List {
+            Section {
+                Text("Scegli una cartella in iCloud Drive: una volta a settimana l'app ci salva da sola una copia di tutti i dati. Così non perdi niente anche se cancelli l'app o cambi iPhone. Vengono tenuti gli ultimi 8 backup.")
+                    .font(.subheadline)
+            }
+            if let folder {
+                Section("Attivo") {
+                    HStack { Text("Cartella"); Spacer(); Text(folder.lastPathComponent).foregroundStyle(.secondary) }
+                    HStack {
+                        Text("Ultimo backup"); Spacer()
+                        Text(last.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "mai").foregroundStyle(.secondary)
+                    }
+                    Button { backupNow() } label: { Label("Fai il backup adesso", systemImage: "arrow.clockwise") }
+                    Button { picking = true } label: { Label("Cambia cartella", systemImage: "folder") }
+                    Button("Disattiva il backup automatico", role: .destructive) {
+                        UserDefaults.standard.removeObject(forKey: autoBackupFolderKey)
+                        self.folder = nil; message = ""
+                    }
+                }
+            } else {
+                Section {
+                    Button { picking = true } label: { Label("Scegli la cartella e attiva", systemImage: "folder.badge.plus").bold() }
+                }
+            }
+            if !message.isEmpty { Section { Text(message).font(.footnote).foregroundStyle(.secondary) } }
+            Section {
+                Text("Per ripristinare: Altro → Ripristina da backup, poi scegli il file Spese-backup con la data più recente.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Backup automatico")
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
+            guard case .success(let url) = r else { return }
+            if setAutoBackupFolder(url) {
+                folder = autoBackupFolder()
+                backupNow()
+            } else {
+                message = "Non riesco a usare questa cartella. Prova a sceglierne un'altra."
+            }
+        }
+    }
+
+    private func backupNow() {
+        if let err = runAutoBackup(ctx, force: true) {
+            message = err
+        } else {
+            last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+            message = "Backup salvato."
         }
     }
 }

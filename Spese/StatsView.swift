@@ -85,6 +85,7 @@ struct StatsView: View {
                     .chartForegroundStyleScale(["Entrate": Theme.accent, "Uscite": Color.red])
                     .frame(height: 200)
                 }
+                PeriodSummariesLinks()
                 Section { NavigationLink { TagsView() } label: { Label("Totale per viaggio o tag", systemImage: "tag") } }
             }
             .navigationTitle("Statistiche")

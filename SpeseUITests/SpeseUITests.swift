@@ -86,6 +86,18 @@ final class SpeseUITests: XCTestCase {
 
         app.tabBars.buttons["Conti"].tap()
         expectText("820,00", "Dopo la riapertura il totale dovrebbe restare 820 €")
+
+        // Riepilogo del periodo nelle Statistiche.
+        app.tabBars.buttons["Statistiche"].tap()
+        expectText("Periodo in corso", "Manca il riepilogo del periodo nelle Statistiche")
+
+        // Pagina del backup automatico.
+        app.tabBars.buttons["Altro"].tap()
+        let backup = app.buttons["Backup automatico"]
+        var tries = 0
+        while !backup.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
+        backup.tap()
+        expectText("Scegli la cartella e attiva", "La pagina del backup automatico non si apre")
     }
 
     /// Conta i giorni da oggi al prossimo giorno `day` (escluso oggi), contando un giorno alla volta.

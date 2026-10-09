@@ -75,8 +75,35 @@ func parseLooseAmount(_ s: String) -> Double? {
     return Double(t)
 }
 
-/// Sceglie la categoria in base al nome dell'esercente.
-func guessCategory(merchant: String, available: [String]) -> String {
+// MARK: - Categorie imparate
+
+/// Esercente → categoria scelta dall'utente correggendo una spesa.
+let learnedCategoriesKey = "learnedCategories"
+
+private func merchantKey(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+
+/// Ricorda la categoria scelta per questo esercente: le prossime spese da lì andranno già nella categoria giusta.
+func learnCategory(merchant: String, category: String, defaults: UserDefaults = .standard) {
+    let k = merchantKey(merchant)
+    guard !k.isEmpty else { return }
+    var map = defaults.dictionary(forKey: learnedCategoriesKey) as? [String: String] ?? [:]
+    map[k] = category
+    defaults.set(map, forKey: learnedCategoriesKey)
+}
+
+/// Aggiorna le categorie imparate quando una categoria viene rinominata.
+func renameLearnedCategory(from old: String, to new: String, defaults: UserDefaults = .standard) {
+    guard var map = defaults.dictionary(forKey: learnedCategoriesKey) as? [String: String] else { return }
+    for (k, v) in map where v == old { map[k] = new }
+    defaults.set(map, forKey: learnedCategoriesKey)
+}
+
+/// Sceglie la categoria in base al nome dell'esercente: prima quella imparata, poi le regole.
+func guessCategory(merchant: String, available: [String], defaults: UserDefaults = .standard) -> String {
+    if let map = defaults.dictionary(forKey: learnedCategoriesKey) as? [String: String],
+       let learned = map[merchantKey(merchant)], available.contains(learned) {
+        return learned
+    }
     let m = merchant.lowercased()
     let words = m.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { String($0) }
     func hit(_ k: String) -> Bool { k.count <= 4 ? words.contains(k) : m.contains(k) }

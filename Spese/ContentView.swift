@@ -30,11 +30,16 @@ struct ContentView: View {
             if lockOn { authenticate() } else { locked = false }
             seed()
             generateAll()
+            if !accounts.isEmpty { runAutoBackup(ctx) }
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
         }
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
-            if p == .active { generateAll(); if lockOn && locked { authenticate() } }
+            if p == .active {
+                generateAll()
+                if !accounts.isEmpty { runAutoBackup(ctx) }
+                if lockOn && locked { authenticate() }
+            }
             if p == .background {
                 try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa
                 if lockOn { locked = true }
@@ -96,6 +101,8 @@ struct HomeView: View {
     @State private var showAdd = false
     @State private var showPeriod = false
     @AppStorage("applePayBannerHidden") private var applePayBannerHidden = false
+    @AppStorage(summarySeenKey) private var summarySeen: Double = 0
+    @State private var endedSummary: EndedPeriod?
     @State private var search = ""
     @State private var filterCat = ""
     @State private var filterMethod = ""
@@ -161,7 +168,7 @@ struct HomeView: View {
                          : "Niente da spendere fino al \(endText) (\(days) giorni)")
                     HStack(spacing: 4) {
                         Text("Dallo stipendio del \(p.start.formatted(.dateTime.day().month(.wide))) hai speso \(eur(spentInPeriod(p)))")
-                        Image(systemName: "pencil.circle")
+                        Image(systemName: "square.and.pencil")
                     }.opacity(0.85)
                 }
                 .font(.footnote).foregroundStyle(.white).multilineTextAlignment(.leading)
@@ -299,6 +306,13 @@ struct HomeView: View {
             .sheet(isPresented: $showAdd) { AddExpenseView(defaultDate: defaultDate()) }
             .sheet(item: $editing) { AddExpenseView(defaultDate: $0.date, editing: $0) }
             .sheet(isPresented: $showPeriod) { PayPeriodEditor() }
+            .sheet(item: $endedSummary) { e in
+                NavigationStack {
+                    PeriodSummaryView(title: "È arrivato lo stipendio", summary: e.summary, previous: e.previous)
+                        .toolbar { Button("Chiudi") { endedSummary = nil } }
+                }
+            }
+            .onAppear(perform: checkEndedPeriod)
             .onChange(of: total) { _, _ in checkAlerts() }
             .onChange(of: budget) { _, _ in checkAlerts() }
         }
@@ -325,6 +339,26 @@ struct HomeView: View {
         .background(LinearGradient(colors: totalAvailable < 0 ? [Color.red, Color.orange] : [Theme.accent, Color(hex: "0F6E56")],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    /// Quando inizia un nuovo periodo (è arrivato lo stipendio) mostra una volta il riepilogo di quello finito.
+    private func checkEndedPeriod() {
+        guard let a = accounts.first, let p = period else { return }
+        let start = p.start.timeIntervalSinceReferenceDate
+        if summarySeen == 0 { summarySeen = start; return }   // prima volta: niente riepilogo
+        guard start > summarySeen else { return }
+        summarySeen = start
+        // Se il periodo finito era quello scelto a mano, si usano le sue date.
+        let chosen: (start: Date, end: Date)? = {
+            guard let s = a.periodStart, let e = a.periodEnd, Calendar.current.isDate(e, inSameDayAs: p.start) else { return nil }
+            return (s, e)
+        }()
+        guard let prev = chosen ?? previousPeriod(before: p.start, day: a.salaryDay) else { return }
+        let s = summarize(expenses: all, incomes: incomes, start: prev.start, end: prev.end)
+        guard s.count > 0 else { return }
+        let before = previousPeriod(before: prev.start, day: a.salaryDay)
+            .map { summarize(expenses: all, incomes: incomes, start: $0.start, end: $0.end) }
+        endedSummary = EndedPeriod(summary: s, previous: before)
     }
 
     private func shift(_ n: Int) { month = Calendar.current.date(byAdding: .month, value: n, to: month) ?? month }
@@ -365,6 +399,12 @@ struct HomeView: View {
     }
 }
 
+
+struct EndedPeriod: Identifiable {
+    let id = UUID()
+    let summary: PeriodSummary
+    let previous: PeriodSummary?
+}
 
 // MARK: - Periodo dello stipendio
 
@@ -411,6 +451,7 @@ struct PayPeriodEditor: View {
                         if let a = accounts.first {
                             a.periodStart = cal.startOfDay(for: start)
                             a.periodEnd = cal.startOfDay(for: end)
+                            UserDefaults.standard.set(a.periodStart?.timeIntervalSinceReferenceDate ?? 0, forKey: summarySeenKey)
                             try? ctx.save()
                         }
                         dismiss()
