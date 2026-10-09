@@ -207,7 +207,7 @@ struct HomeView: View {
                 Button { showPeriod = true } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .top) {
-                            Text("Speso da stipendio (\(startText))").font(.footnote.weight(.medium)).lineLimit(1).minimumScaleFactor(0.7)
+                            Text("Speso dal \(startText)").font(.footnote.weight(.medium)).lineLimit(1).minimumScaleFactor(0.7)
                             Spacer(minLength: 4)
                             Image(systemName: "pencil").foregroundStyle(HeroStyle.mint)
                         }
