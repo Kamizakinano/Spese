@@ -319,7 +319,7 @@ struct SalaryView: View {
                 HStack { Text("A risparmio"); Spacer(); Text(eur(saved)).bold() }
                 HStack { Text("Disponibile da spendere"); Spacer(); Text(eur(amount - saved)).bold() }
             }
-            Text("La quota si calcola sull'importo ricevuto, non su quello che ti resta. Imposta 0 come stipendio per disattivare l'inserimento automatico.")
+            Text("La quota si calcola sull'importo ricevuto, non su quello che ti resta. Imposta 0 come stipendio per disattivare l'inserimento automatico. Il giorno di accredito serve anche per la stima di quanto puoi spendere al giorno, anche senza importo.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .navigationTitle("Stipendio e risparmi")

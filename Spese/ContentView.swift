@@ -135,11 +135,11 @@ struct HomeView: View {
     }
     private var shown: [Expense] { (search.isEmpty ? expenses : all).filter(matches) }
 
-    /// Quanto si può spendere al giorno fino al prossimo stipendio (o fino a fine mese se lo stipendio non è impostato).
+    /// Quanto si può spendere al giorno fino al prossimo giorno di stipendio (anche se l'importo non è impostato).
     private var perDayText: String? {
         let cal = Calendar.current
         guard totalAvailable > 0, cal.isDate(month, equalTo: Date(), toGranularity: .month) else { return nil }
-        if let a = accounts.first, a.salaryAmount > 0, let pay = nextPayday(day: a.salaryDay),
+        if let a = accounts.first, let pay = nextPayday(day: a.salaryDay),
            let days = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: pay).day, days > 0 {
             return "\(eur(totalAvailable / Double(days))) al giorno per \(days) giorni, fino allo stipendio del \(pay.formatted(.dateTime.day().month(.wide)))"
         }

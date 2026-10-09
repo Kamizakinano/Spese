@@ -52,7 +52,6 @@ final class SpeseUITests: XCTestCase {
             springboard.buttons[name].tap()
         }
         type("1000", into: bank)
-        type("1500", into: app.textFields["Importo stipendio (€)"])   // giorno di accredito: 27
         type("50", into: app.textFields["Contanti che ho adesso (€)"])
         let start = app.buttons["Inizia"]
         var tries = 0
@@ -73,7 +72,8 @@ final class SpeseUITests: XCTestCase {
         app.terminate()
         app.launch()
 
-        // La stima giornaliera arriva fino al prossimo stipendio (il 27), non a fine mese.
+        // La stima giornaliera arriva fino al giorno dello stipendio (il 27, quello predefinito),
+        // anche senza aver inserito l'importo dello stipendio.
         let days = giorniAlloStipendio(27)
         expectText("per \(days) giorni, fino allo stipendio del 27", "La stima giornaliera dovrebbe durare \(days) giorni, fino al 27")
 
