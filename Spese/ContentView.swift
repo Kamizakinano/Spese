@@ -178,24 +178,45 @@ struct HomeView: View {
         statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.myAmount }
     }
 
-    /// Quanto si può spendere al giorno fino al prossimo stipendio. Toccandolo si sceglie il periodo.
-    @ViewBuilder private var perDay: some View {
-        if Calendar.current.isDate(month, equalTo: Date(), toGranularity: .month), let p = period {
+    /// Quanto si può spendere al giorno fino al prossimo stipendio e quanto si è speso da allora.
+    /// Toccando uno dei due riquadri si sceglie il periodo.
+    @ViewBuilder private var periodRow: some View {
+        if isCurrentMonth, let p = period {
             let days = max(daysLeft(until: p.end), 1)
             let endText = p.end.formatted(.dateTime.day().month(.wide))
-            Button { showPeriod = true } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(totalAvailable > 0
-                         ? "\(eur(totalAvailable / Double(days))) al giorno per \(days) giorni, fino al \(endText)"
-                         : "Niente da spendere fino al \(endText) (\(days) giorni)")
-                    HStack(spacing: 4) {
-                        Text("Dallo stipendio del \(p.start.formatted(.dateTime.day().month(.wide))) hai speso \(eur(spentInPeriod(p)))")
-                        Image(systemName: "square.and.pencil")
-                    }.opacity(0.85)
+            let startText = p.start.formatted(.dateTime.day().month(.abbreviated))
+            HStack(alignment: .top, spacing: 10) {
+                Button { showPeriod = true } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Text("Budget giornaliero").font(.footnote.weight(.medium))
+                            Spacer(minLength: 4)
+                            Image(systemName: "calendar.badge.clock").opacity(0.75)
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(eur(max(totalAvailable, 0) / Double(days))).font(.title3.bold())
+                            Text("/ giorno").font(.subheadline).opacity(0.75)
+                        }.lineLimit(1).minimumScaleFactor(0.7)
+                        Text("Fino al \(endText) • ancora \(days) \(days == 1 ? "giorno" : "giorni")")
+                            .font(.caption2).opacity(0.75)
+                    }
+                    .padding(12).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+                    .background(HeroStyle.mint.opacity(0.22), in: RoundedRectangle(cornerRadius: 14))
                 }
-                .font(.footnote).foregroundStyle(.white).multilineTextAlignment(.leading)
+                Button { showPeriod = true } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .top) {
+                            Text("Speso da stipendio (\(startText))").font(.footnote.weight(.medium))
+                            Spacer(minLength: 4)
+                            Image(systemName: "pencil").foregroundStyle(HeroStyle.mint)
+                        }
+                        Text(eur(spentInPeriod(p))).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    .padding(12).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(HeroStyle.mint, lineWidth: 1.5))
+                }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.borderless).foregroundStyle(.white).multilineTextAlignment(.leading)
         }
     }
 
@@ -360,26 +381,60 @@ struct HomeView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Totale disponibile").font(.subheadline).opacity(0.85)
-            Text(eur(totalAvailable)).font(.system(size: 36, weight: .bold, design: .rounded))
-            HStack {
-                Label("Carta \(eur(left))", systemImage: "creditcard")
-                Spacer()
-                Label("Contanti \(eur(cashNow))", systemImage: "banknote")
-            }.font(.footnote)
-            HStack {
-                Text("Spesi \(eur(total))")
-                Spacer()
-                Text("Entrate \(eur(fig.incomeNet))")
-            }.font(.footnote)
-            Text("Risparmi separati: \(eur(ledger.savingsTotal))").font(.footnote).opacity(0.85)
-            perDay
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Totale disponibile").font(.subheadline).opacity(0.7)
+                Text(eur(totalAvailable)).font(.system(size: 40, weight: .bold, design: .rounded))
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            .padding(.bottom, 4)
+            HStack(spacing: 10) {
+                heroTile {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Carta", systemImage: "creditcard").font(.subheadline).opacity(0.85)
+                        Text(eur(left)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+                Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: 34)
+                heroTile {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Contanti", systemImage: "banknote").font(.subheadline).opacity(0.85)
+                        Text(eur(cashNow)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                heroTile { heroFlow("Spesi", icon: "arrow.down.right", tint: HeroStyle.coral, value: total) }
+                heroTile { heroFlow("Entrate", icon: "arrow.up.right", tint: HeroStyle.mint, value: fig.incomeNet) }
+            }
+            heroTile {
+                HStack {
+                    Label("Risparmi separati", systemImage: "building.columns").font(.subheadline)
+                    Spacer()
+                    Text(eur(ledger.savingsTotal)).font(.subheadline.bold())
+                }
+            }
+            periodRow.padding(.top, 2)
         }
         .foregroundStyle(.white).padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: totalAvailable < 0 ? [Color.red, Color.orange] : [Theme.accent, Color(hex: "0F6E56")],
+        .background(LinearGradient(colors: totalAvailable < 0 ? [Color.red, Color.orange] : [HeroStyle.top, HeroStyle.bottom],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private func heroTile<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        content()
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func heroFlow(_ title: String, icon: String, tint: Color, value: Double) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.subheadline.bold()).foregroundStyle(tint)
+            Text("\(title): ").font(.subheadline) + Text(eur(value)).font(.subheadline.bold())
+        }
+        .lineLimit(1).minimumScaleFactor(0.7)
     }
 
     /// Quando inizia un nuovo periodo (è arrivato lo stipendio) mostra una volta il riepilogo di quello finito.
@@ -450,6 +505,14 @@ struct HomeView: View {
     }
 }
 
+
+/// Colori del riquadro in cima alla Home.
+enum HeroStyle {
+    static let top = Color(hex: "1A5E44")
+    static let bottom = Color(hex: "0E4632")
+    static let mint = Color(hex: "4CC38A")
+    static let coral = Color(hex: "E8735F")
+}
 
 struct EndedPeriod: Identifiable {
     let id = UUID()
