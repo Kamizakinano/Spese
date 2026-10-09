@@ -15,19 +15,45 @@ func nextSalaryKey(day: Int) -> String {
     return monthKey(d)
 }
 
+/// Il giorno `day` nel mese spostato di `offset` mesi rispetto a `date`
+/// (nei mesi più corti di `day` vale l'ultimo giorno del mese).
+private func payday(day: Int, monthOffset offset: Int, from date: Date) -> Date? {
+    let cal = Calendar.current
+    guard let m = cal.date(byAdding: .month, value: offset, to: date),
+          let first = cal.date(from: cal.dateComponents([.year, .month], from: m)),
+          let n = cal.range(of: .day, in: .month, for: first)?.count else { return nil }
+    return cal.date(byAdding: .day, value: min(day, n) - 1, to: first)
+}
+
 /// Giorno del prossimo stipendio, dopo oggi: se oggi è il giorno dello stipendio è quello del mese dopo.
-/// Nei mesi più corti di `day` vale l'ultimo giorno del mese.
 func nextPayday(day: Int, from now: Date = Date()) -> Date? {
+    let today = Calendar.current.startOfDay(for: now)
+    return (0...2).lazy.compactMap { payday(day: day, monthOffset: $0, from: today) }.first { $0 > today }
+}
+
+/// Giorno dell'ultimo stipendio, fino a oggi compreso.
+func lastPayday(day: Int, from now: Date = Date()) -> Date? {
+    let today = Calendar.current.startOfDay(for: now)
+    return (0...2).lazy.compactMap { payday(day: day, monthOffset: -$0, from: today) }.first { $0 <= today }
+}
+
+/// Periodo tra uno stipendio e il successivo. Se l'utente ha indicato le date e il periodo
+/// non è ancora finito vale quello, altrimenti si calcola dal giorno di accredito.
+func payPeriod(day: Int, customStart: Date?, customEnd: Date?, now: Date = Date()) -> (start: Date, end: Date)? {
     let cal = Calendar.current
     let today = cal.startOfDay(for: now)
-    for add in 0...2 {
-        guard let m = cal.date(byAdding: .month, value: add, to: today),
-              let first = cal.date(from: cal.dateComponents([.year, .month], from: m)),
-              let n = cal.range(of: .day, in: .month, for: first)?.count,
-              let d = cal.date(byAdding: .day, value: min(day, n) - 1, to: first) else { continue }
-        if d > today { return d }
+    if let end = customEnd.map({ cal.startOfDay(for: $0) }), end > today {
+        let start = customStart.map { cal.startOfDay(for: $0) } ?? lastPayday(day: day, from: now) ?? today
+        return (min(start, today), end)
     }
-    return nil
+    guard let start = lastPayday(day: day, from: now), let end = nextPayday(day: day, from: now) else { return nil }
+    return (start, end)
+}
+
+/// Giorni da oggi (compreso) al giorno `end` (escluso).
+func daysLeft(until end: Date, from now: Date = Date()) -> Int {
+    let cal = Calendar.current
+    return cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: end)).day ?? 0
 }
 
 /// Date dovute (fino a oggi) per un evento mensile, a partire dal mese `key`.

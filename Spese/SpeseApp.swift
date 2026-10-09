@@ -122,6 +122,8 @@ func notify(_ title: String, _ body: String) {
     var salaryValue: Double
     var salaryNextKey: String
     var cashStart: Double = 0   // contanti nel portafoglio all'inizio
+    var periodStart: Date? = nil   // stipendio ricevuto il (scelto dall'utente)
+    var periodEnd: Date? = nil     // prossimo stipendio il (scelto dall'utente)
     init(startDate: Date) {
         self.startDate = startDate; salaryAmount = 0; salaryDay = 27
         salaryMode = 0; salaryValue = 0; salaryNextKey = ""

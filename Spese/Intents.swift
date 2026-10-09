@@ -10,20 +10,32 @@ enum PayMethod: String, AppEnum {
     ]
 }
 
+/// Chiave dell'impostazione "avvisami quando arriva una spesa da Apple Pay" (spenta di partenza).
+let applePayNotifyKey = "applePayNotify"
+
+struct InvalidAmountError: Error, CustomLocalizedStringResourceConvertible {
+    let text: String
+    var localizedStringResource: LocalizedStringResource { "Importo non valido: \(text)" }
+}
+
 /// Azione per i Comandi rapidi: registra una spesa (per esempio da un pagamento con Apple Pay).
+/// Lavora in silenzio: non apre l'app, non mostra messaggi e non manda notifiche (salvo se attivate).
 struct AddExpenseIntent: AppIntent {
     static let title: LocalizedStringResource = "Aggiungi spesa"
     static let description = IntentDescription("Registra una spesa in Spese, per esempio da un pagamento con Apple Pay.")
+    static let openAppWhenRun = false
 
     @Parameter(title: "Importo") var amount: String
     @Parameter(title: "Esercente", default: "") var merchant: String
     @Parameter(title: "Pagamento", default: .carta) var method: PayMethod
 
+    static var parameterSummary: some ParameterSummary {
+        Summary("Aggiungi spesa di \(\.$amount) da \(\.$merchant)") { \.$method }
+    }
+
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let value = parseLooseAmount(amount), value > 0 else {
-            return .result(dialog: "Importo non valido: \(amount)")
-        }
+    func perform() async throws -> some IntentResult {
+        guard let value = parseLooseAmount(amount), value > 0 else { throw InvalidAmountError(text: amount) }
         let ctx = SharedStore.container.mainContext
         let cats = (try? ctx.fetch(FetchDescriptor<CategoryItem>(sortBy: [SortDescriptor(\.order)]))) ?? []
         let name = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -32,8 +44,19 @@ struct AddExpenseIntent: AppIntent {
         e.method = method.rawValue
         ctx.insert(e)
         try ctx.save()
-        notify("Spesa registrata", "\(eur(value)) · \(name.isEmpty ? cat : name)")
-        return .result(dialog: "Registrata: \(eur(value)) in \(cat)")
+        if UserDefaults.standard.bool(forKey: applePayNotifyKey) {
+            notify("Spesa registrata", "\(eur(value)) · \(name.isEmpty ? cat : name)")
+        }
+        return .result()
+    }
+}
+
+/// Rende "Aggiungi spesa" disponibile subito in Comandi rapidi e con Siri, senza doverlo costruire.
+struct SpeseShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: AddExpenseIntent(),
+                    phrases: ["Aggiungi spesa in \(.applicationName)", "Registra una spesa in \(.applicationName)"],
+                    shortTitle: "Aggiungi spesa", systemImageName: "creditcard")
     }
 }
 
