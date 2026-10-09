@@ -94,7 +94,7 @@ final class SpeseUITests: XCTestCase {
         // Pagina del backup automatico.
         app.tabBars.buttons["Altro"].tap()
         let backup = app.buttons["Backup automatico"]
-        var tries = 0
+        tries = 0
         while !backup.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
         backup.tap()
         expectText("Scegli la cartella e attiva", "La pagina del backup automatico non si apre")
