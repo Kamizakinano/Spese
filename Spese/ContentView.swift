@@ -95,6 +95,7 @@ struct HomeView: View {
     @State private var month = Date()
     @State private var showAdd = false
     @State private var showPeriod = false
+    @AppStorage("applePayBannerHidden") private var applePayBannerHidden = false
     @State private var search = ""
     @State private var filterCat = ""
     @State private var filterMethod = ""
@@ -184,6 +185,26 @@ struct HomeView: View {
                 Section { hero }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
+
+                if !applePayBannerHidden {
+                    Section {
+                        HStack(spacing: 12) {
+                            NavigationLink { CardLinkView() } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Collega Apple Pay").bold()
+                                        Text("Le spese pagate con l'iPhone entrano da sole").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                } icon: { Image(systemName: "wave.3.right.circle.fill").foregroundStyle(Theme.accent) }
+                            }
+                            Button { applePayBannerHidden = true } label: {
+                                Image(systemName: "xmark").font(.caption.bold()).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Nascondi")
+                        }
+                    }
+                }
 
                 if owedTotal > 0 {
                     Section {

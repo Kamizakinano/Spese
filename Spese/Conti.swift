@@ -349,6 +349,8 @@ struct BalanceEditor: View {
 // MARK: - Collegamento della carta con Apple Pay
 
 struct CardLinkView: View {
+    @AppStorage(applePayNotifyKey) private var notifyOn = false
+
     private func step(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(n)").font(.footnote.bold()).foregroundStyle(.white)
@@ -360,27 +362,34 @@ struct CardLinkView: View {
     var body: some View {
         List {
             Section {
-                Text("Le spese pagate con Apple Pay possono entrare da sole nell'app, senza collegare la banca. Si imposta una volta sola con l'app Comandi rapidi.")
+                Text("Paghi con Apple Pay e la spesa entra da sola nell'app, in silenzio: niente notifiche, niente da confermare. L'azione \"Aggiungi spesa\" è già pronta in Comandi rapidi, devi solo collegarla alla carta una volta (circa un minuto).")
                     .font(.subheadline)
+                Link(destination: URL(string: "shortcuts://")!) {
+                    Label("Apri Comandi rapidi", systemImage: "arrow.up.forward.app").bold()
+                }
             }
-            Section("Come si imposta") {
-                step(1, "Apri Comandi rapidi e vai nella scheda Automazione.")
-                step(2, "Tocca + e scegli Transazione.")
-                step(3, "Seleziona la tua carta (o più carte) e scegli Esegui immediatamente.")
-                step(4, "Tocca Nuovo comando rapido e aggiungi l'azione Aggiungi spesa, che trovi sotto Spese.")
-                step(5, "Nell'azione, come Importo scegli la variabile Importo e come Esercente la variabile Esercente. Come Pagamento lascia Carta.")
-                step(6, "Salva. Da ora, ogni pagamento con Apple Pay con quella carta viene registrato e ricevi una notifica.")
-                Link(destination: URL(string: "shortcuts://")!) { Label("Apri Comandi rapidi", systemImage: "arrow.up.forward.app") }
+            Section("Come si collega (una volta sola)") {
+                step(1, "In Comandi rapidi apri la scheda Automazione e tocca + (o Nuova automazione).")
+                step(2, "Scegli Transazione, seleziona la tua carta e lascia tutte le categorie.")
+                step(3, "Scegli Esegui immediatamente e spegni Notifica quando eseguito. Tocca Avanti.")
+                step(4, "Tocca Nuovo comando rapido vuoto, poi Aggiungi azione: cerca Spese e scegli Aggiungi spesa.")
+                step(5, "Tocca Importo e scegli Input comando rapido, poi tocca la variabile e scegli Importo. Fai lo stesso con Esercente scegliendo Esercente.")
+                step(6, "Tocca Fine. Da ora ogni pagamento con Apple Pay con quella carta viene registrato da solo.")
+            }
+            Section {
+                Toggle("Avvisami quando una spesa arriva da Apple Pay", isOn: $notifyOn)
+            } footer: {
+                Text("Spento: la spesa viene registrata senza nessun avviso. La trovi nell'elenco quando apri l'app.")
             }
             Section("Cosa funziona e cosa no") {
                 Text("Funzionano i pagamenti con Apple Pay con la carta scelta. Non vengono registrati i pagamenti con la carta fisica, online con il numero della carta, i bonifici e gli addebiti diretti: quelli vanno inseriti a mano.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("La categoria viene scelta dal nome dell'esercente (per esempio Conad diventa Alimentari). Se non è riconosciuto va in Altro e puoi cambiarla toccando la spesa.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Text("I nomi delle voci in Comandi rapidi possono cambiare leggermente a seconda della versione di iOS.")
+                Text("Apple non permette alle app di creare da sole l'automazione: per questo il collegamento alla carta va fatto a mano una volta. I nomi delle voci possono cambiare un po' tra le versioni di iOS.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Collega la carta")
+        .navigationTitle("Collega Apple Pay")
     }
 }
