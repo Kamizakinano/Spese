@@ -1,6 +1,11 @@
 name: Build IPA
 on:
   workflow_dispatch:
+    inputs:
+      video:
+        description: "Registra un video delle prove sul simulatore (solo su richiesta)"
+        type: boolean
+        default: false
   push:
     branches: [main, "claude/**"]
 
@@ -58,8 +63,17 @@ jobs:
 
           # Prove automatiche dell'uso dell'app, partendo da un'installazione pulita.
           xcrun simctl uninstall "$UDID" com.tuonome.spese
+          REC=""
+          if [ "${{ inputs.video }}" = "true" ]; then
+            xcrun simctl io "$UDID" recordVideo --codec=h264 --force video-prove.mp4 &
+            REC=$!
+            sleep 3
+          fi
+          STATUS=0
           xcodebuild test -project Spese.xcodeproj -scheme Spese -destination "id=$UDID" \
-            -derivedDataPath build-test CODE_SIGN_IDENTITY="-"
+            -derivedDataPath build-test CODE_SIGN_IDENTITY="-" || STATUS=$?
+          if [ -n "$REC" ]; then kill -INT "$REC"; wait "$REC" || true; ls -la video-prove.mp4 || true; fi
+          if [ "$STATUS" -ne 0 ]; then exit "$STATUS"; fi
           # Schermata dell'app con i dati lasciati dalle prove.
           xcrun simctl launch "$UDID" com.tuonome.spese
           sleep 8
@@ -96,7 +110,9 @@ jobs:
         run: |
           gh release delete ultima-versione --yes --cleanup-tag || true
           cp screenshot.png schermata-simulatore.png
-          gh release create ultima-versione Spese.ipa schermata-simulatore.png \
+          FILES="Spese.ipa schermata-simulatore.png"
+          if [ -f video-prove.mp4 ]; then FILES="$FILES video-prove.mp4"; fi
+          gh release create ultima-versione $FILES \
             --target "$GITHUB_SHA" --latest \
             --title "Spese – build ${{ github.run_number }}" \
             --notes "Compilata da ${GITHUB_REF_NAME} (${GITHUB_SHA::7}). Testata sul simulatore. Scarica Spese.ipa e installala con Sideloadly."
