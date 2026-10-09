@@ -102,6 +102,9 @@ struct HomeView: View {
     @State private var showPeriod = false
     @AppStorage("applePayBannerHidden") private var applePayBannerHidden = false
     @AppStorage(summarySeenKey) private var summarySeen: Double = 0
+    @AppStorage(limitPeriodOnKey) private var limitOn = false
+    @AppStorage(limitStartKey) private var limitStart: Double = 0
+    @AppStorage(limitEndKey) private var limitEnd: Double = 0
     @State private var endedSummary: EndedPeriod?
     @State private var search = ""
     @State private var filterCat = ""
@@ -136,8 +139,22 @@ struct HomeView: View {
 
     private var owedTotal: Double { all.filter { !$0.settled && $0.owedAmount > 0 }.reduce(0) { $0 + $1.owedAmount } }
     private var limited: [CategoryItem] { cats.filter { $0.limit > 0 } }
+    private var isCurrentMonth: Bool { Calendar.current.isDate(month, equalTo: Date(), toGranularity: .month) }
+    /// Periodo dei limiti: il mese mostrato, oppure (se attivato) il periodo scelto o quello dello stipendio.
+    private var limitRange: (start: Date, end: Date)? {
+        limitPeriod(on: limitOn,
+                    customStart: limitStart > 0 ? Date(timeIntervalSinceReferenceDate: limitStart) : nil,
+                    customEnd: limitEnd > 0 ? Date(timeIntervalSinceReferenceDate: limitEnd) : nil,
+                    pay: period, month: month)
+    }
     private func spent(_ c: CategoryItem) -> Double {
-        expenses.filter { $0.categoryRaw == c.name }.reduce(0) { $0 + $1.amount }
+        guard let r = limitRange else { return 0 }
+        return all.filter { $0.categoryRaw == c.name && $0.date >= r.start && $0.date < r.end }.reduce(0) { $0 + $1.amount }
+    }
+    private var limitsTitle: String {
+        guard limitOn, let r = limitRange else { return "Limiti per categoria" }
+        let last = Calendar.current.date(byAdding: .day, value: -1, to: r.end) ?? r.end
+        return "Limiti dal \(r.start.formatted(.dateTime.day().month(.wide))) al \(last.formatted(.dateTime.day().month(.wide)))"
     }
     private func matches(_ e: Expense) -> Bool {
         if !filterCat.isEmpty && e.categoryRaw != filterCat { return false }
@@ -239,8 +256,8 @@ struct HomeView: View {
                     }
                 }
 
-                if !limited.isEmpty {
-                    Section("Limiti per categoria") {
+                if !limited.isEmpty && (!limitOn || isCurrentMonth) {
+                    Section(limitsTitle) {
                         ForEach(limited) { c in
                             let s = spent(c)
                             VStack(alignment: .leading, spacing: 4) {
@@ -367,8 +384,9 @@ struct HomeView: View {
     }
 
     private func checkCategoryLimits() {
-        let k = monthKey(month)
-        guard k == monthKey(Date()) else { return }
+        guard isCurrentMonth, let r = limitRange else { return }
+        // Gli avvisi ripartono a ogni nuovo periodo (mese o periodo scelto).
+        let k = limitOn ? "p\(Int(r.start.timeIntervalSinceReferenceDate))" : monthKey(month)
         for c in cats where c.limit > 0 {
             let s = spent(c)
             for (th, label) in [(0.8, "80%"), (1.0, "100%")] {

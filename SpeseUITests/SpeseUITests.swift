@@ -98,6 +98,18 @@ final class SpeseUITests: XCTestCase {
         while !backup.isHittable && tries < 6 { app.swipeUp(); tries += 1 }
         backup.tap()
         expectText("Scegli la cartella e attiva", "La pagina del backup automatico non si apre")
+
+        // Periodo dei limiti: acceso mostra le date "Dal" e "Al".
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let cats = app.buttons["Categorie e limiti"]
+        tries = 0
+        while !cats.isHittable && tries < 6 { app.swipeDown(); tries += 1 }
+        cats.tap()
+        let toggle = app.switches["Limiti su un periodo scelto da me"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Manca l'interruttore del periodo dei limiti")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()   // tocca l'interruttore a destra
+        XCTAssertTrue(app.staticTexts["Dal"].waitForExistence(timeout: 5), "Accendendo devono comparire le date Dal e Al")
+        XCTAssertTrue(app.staticTexts["Al"].exists)
     }
 
     /// Conta i giorni da oggi al prossimo giorno `day` (escluso oggi), contando un giorno alla volta.

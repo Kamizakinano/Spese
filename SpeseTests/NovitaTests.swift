@@ -89,3 +89,36 @@ final class NovitaTests: XCTestCase {
         XCTAssertEqual(q?.end, d(2026, 10, 9, hour: 0))
     }
 }
+
+/// Prove del periodo su cui si contano i limiti per categoria.
+final class LimitPeriodTests: XCTestCase {
+    private func d(_ y: Int, _ m: Int, _ day: Int, hour: Int = 12) -> Date {
+        Calendar.current.date(from: DateComponents(year: y, month: m, day: day, hour: hour))!
+    }
+    private var pay: (start: Date, end: Date) { (d(2026, 10, 9, hour: 0), d(2026, 11, 10, hour: 0)) }
+
+    func testSpentoUsaIlMeseDiCalendario() {
+        let r = limitPeriod(on: false, customStart: nil, customEnd: nil, pay: pay, month: d(2026, 10, 15), now: d(2026, 10, 15))
+        XCTAssertEqual(r?.start, d(2026, 10, 1, hour: 0))
+        XCTAssertEqual(r?.end, d(2026, 11, 1, hour: 0))
+    }
+
+    func testAccesoUsaLeDateScelte() {
+        let r = limitPeriod(on: true, customStart: d(2026, 10, 12), customEnd: d(2026, 10, 26), pay: pay,
+                            month: d(2026, 10, 15), now: d(2026, 10, 15))
+        XCTAssertEqual(r?.start, d(2026, 10, 12, hour: 0))
+        XCTAssertEqual(r?.end, d(2026, 10, 26, hour: 0))
+    }
+
+    func testFinitoIlPeriodoSceltoSegueLoStipendio() {
+        let r = limitPeriod(on: true, customStart: d(2026, 10, 1), customEnd: d(2026, 10, 8), pay: pay,
+                            month: d(2026, 10, 15), now: d(2026, 10, 15))
+        XCTAssertEqual(r?.start, pay.start)
+        XCTAssertEqual(r?.end, pay.end)
+    }
+
+    func testAccesoSenzaDateUsaLoStipendio() {
+        let r = limitPeriod(on: true, customStart: nil, customEnd: nil, pay: pay, month: d(2026, 10, 15), now: d(2026, 10, 15))
+        XCTAssertEqual(r?.start, pay.start)
+    }
+}

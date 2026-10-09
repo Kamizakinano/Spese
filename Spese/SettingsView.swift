@@ -76,19 +76,66 @@ struct SettingsView: View {
 struct CategoriesView: View {
     @Environment(\.modelContext) private var ctx
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @Query private var accounts: [Account]
     @State private var editing: CategoryItem?
     @State private var adding = false
+    @AppStorage(limitPeriodOnKey) private var limitOn = false
+    @AppStorage(limitStartKey) private var limitStart: Double = 0
+    @AppStorage(limitEndKey) private var limitEnd: Double = 0
+
+    private let cal = Calendar.current
+    private var pay: (start: Date, end: Date)? {
+        accounts.first.flatMap { payPeriod(day: $0.salaryDay, customStart: $0.periodStart, customEnd: $0.periodEnd) }
+    }
+    /// "Dal": primo giorno del periodo.
+    private var fromDate: Binding<Date> {
+        Binding(get: { limitStart > 0 ? Date(timeIntervalSinceReferenceDate: limitStart) : cal.startOfDay(for: Date()) },
+                set: { v in
+                    limitStart = cal.startOfDay(for: v).timeIntervalSinceReferenceDate
+                    if limitEnd <= limitStart { limitEnd = (cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: v)) ?? v).timeIntervalSinceReferenceDate }
+                })
+    }
+    /// "Al": ultimo giorno incluso (si salva il giorno dopo).
+    private var toDate: Binding<Date> {
+        Binding(get: {
+                    let end = limitEnd > 0 ? Date(timeIntervalSinceReferenceDate: limitEnd) : Date()
+                    return cal.date(byAdding: .day, value: -1, to: end) ?? end
+                },
+                set: { v in limitEnd = (cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: v)) ?? v).timeIntervalSinceReferenceDate })
+    }
+    private func useSalaryPeriod() {
+        guard let p = pay else { return }
+        limitStart = p.start.timeIntervalSinceReferenceDate
+        limitEnd = p.end.timeIntervalSinceReferenceDate
+    }
 
     var body: some View {
         List {
-            ForEach(cats) { c in
-                Button { editing = c } label: {
-                    Label { Text(c.name).foregroundStyle(.primary) }
-                    icon: { Image(systemName: c.icon).foregroundStyle(Color(hex: c.colorHex)) }
+            Section {
+                Toggle("Limiti su un periodo scelto da me", isOn: $limitOn)
+                    .onChange(of: limitOn) { _, on in if on && limitEnd <= Date().timeIntervalSinceReferenceDate { useSalaryPeriod() } }
+                if limitOn {
+                    DatePicker("Dal", selection: fromDate, displayedComponents: .date)
+                    DatePicker("Al", selection: toDate, in: fromDate.wrappedValue..., displayedComponents: .date)
+                    Button("Usa il periodo dello stipendio") { useSalaryPeriod() }
                 }
-            }.onDelete { i in i.map { cats[$0] }.forEach(ctx.delete) }
+            } header: {
+                Text("Periodo dei limiti")
+            } footer: {
+                Text(limitOn
+                     ? "I limiti si contano dal giorno \"Dal\" al giorno \"Al\" compresi. Finito questo periodo seguono da soli il periodo dello stipendio, finché non scegli nuove date."
+                     : "Spento: i limiti si contano sul mese di calendario, dal primo all'ultimo giorno.")
+            }
+            Section("Categorie") {
+                ForEach(cats) { c in
+                    Button { editing = c } label: {
+                        Label { Text(c.name).foregroundStyle(.primary) }
+                        icon: { Image(systemName: c.icon).foregroundStyle(Color(hex: c.colorHex)) }
+                    }
+                }.onDelete { i in i.map { cats[$0] }.forEach(ctx.delete) }
+            }
         }
-        .navigationTitle("Categorie")
+        .navigationTitle("Categorie e limiti")
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .sheet(item: $editing) { CategoryEditor(cat: $0, count: cats.count) }
         .sheet(isPresented: $adding) { CategoryEditor(cat: nil, count: cats.count) }

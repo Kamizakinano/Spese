@@ -38,6 +38,34 @@ func previousPeriod(before start: Date, day: Int) -> (start: Date, end: Date)? {
     return (prev, cal.startOfDay(for: start))
 }
 
+// MARK: - Periodo dei limiti per categoria
+
+let limitPeriodOnKey = "limitPeriodOn"
+let limitStartKey = "limitStart"   // primo giorno (incluso)
+let limitEndKey = "limitEnd"       // giorno dopo l'ultimo (escluso)
+
+/// Periodo su cui si contano i limiti per categoria.
+/// Spento: il mese di calendario mostrato. Acceso: le date scelte; finite quelle, il periodo dello stipendio.
+func limitPeriod(on: Bool, customStart: Date?, customEnd: Date?, pay: (start: Date, end: Date)?,
+                 month: Date, now: Date = Date()) -> (start: Date, end: Date)? {
+    let cal = Calendar.current
+    if on {
+        if let s = customStart.map({ cal.startOfDay(for: $0) }), let e = customEnd.map({ cal.startOfDay(for: $0) }),
+           s < e, e > cal.startOfDay(for: now) {
+            return (s, e)
+        }
+        return pay
+    }
+    guard let iv = cal.dateInterval(of: .month, for: month) else { return nil }
+    return (iv.start, iv.end)
+}
+
+/// Data salvata nelle impostazioni (0 = non impostata).
+func storedDate(_ key: String) -> Date? {
+    let v = UserDefaults.standard.double(forKey: key)
+    return v > 0 ? Date(timeIntervalSinceReferenceDate: v) : nil
+}
+
 /// Chiave dell'inizio dell'ultimo periodo già mostrato nel riepilogo automatico.
 let summarySeenKey = "summarySeenStart"
 
