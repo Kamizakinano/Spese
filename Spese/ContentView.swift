@@ -35,7 +35,10 @@ struct ContentView: View {
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
             if p == .active { generateAll(); if lockOn && locked { authenticate() } }
-            if p == .background && lockOn { locked = true }
+            if p == .background {
+                try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa
+                if lockOn { locked = true }
+            }
         }
         .onChange(of: recurring.count) { _, _ in generateAll() }
         .onChange(of: accounts.count) { _, _ in generateAll() }

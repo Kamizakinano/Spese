@@ -340,6 +340,7 @@ struct BalanceEditor: View {
             } else {
                 ctx.insert(Income(amount: d, saved: 0, kind: initialKind, date: a.startDate, note: "Saldo iniziale"))
             }
+            try? ctx.save()
         }
         dismiss()
     }
