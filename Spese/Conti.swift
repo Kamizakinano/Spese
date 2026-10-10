@@ -21,8 +21,6 @@ struct ContiView: View {
     @Query private var payments: [TripPayment]
     @State private var kind = "prelievo"
     @State private var showMove = false
-    @State private var editBank = false
-    @State private var editCash = false
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var bank: Double { ledger.figures(for: Date()).left }
@@ -60,11 +58,6 @@ struct ContiView: View {
                     NavigationLink { CashView() } label: { row("banknote", "Contanti (portafoglio)", cash, Color(hex: "E67E22")) }
                 }
 
-                Section("Modifica i saldi") {
-                    Button { editBank = true } label: { Label("Modifica soldi in banca", systemImage: "pencil") }
-                    Button { editCash = true } label: { Label("Modifica contanti", systemImage: "pencil") }
-                }
-
                 Section("Spostamenti") {
                     Button { kind = "prelievo"; showMove = true } label: {
                         Label("Ho prelevato contanti dalla banca", systemImage: "arrow.down.to.line")
@@ -81,8 +74,6 @@ struct ContiView: View {
             }
             .navigationTitle("Conti")
             .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
-            .sheet(isPresented: $editBank) { BalanceEditor(isCash: false, current: bank) }
-            .sheet(isPresented: $editCash) { BalanceEditor(isCash: true, current: cash) }
         }
     }
 }
