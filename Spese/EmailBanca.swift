@@ -148,6 +148,7 @@ struct AddFromBankEmailIntent: AppIntent {
             let result = try recordBankEmail(e, ctx: ctx)
             ApplePayLog.finish(entry, result + (e.merchant.isEmpty ? "" : " · \(e.merchant)"))
             updateWidgetSnapshot(ctx)
+            runAutoBackup(ctx)
             if UserDefaults.standard.bool(forKey: applePayNotifyKey), !result.contains("ignorat") {
                 notify("Dalla banca", result)
             }
