@@ -80,6 +80,7 @@ struct IncomesView: View {
     @Environment(\.modelContext) private var ctx
     @Query(sort: \Income.date, order: .reverse) private var incomes: [Income]
     @State private var adding = false
+    @State private var editing: Income?
 
     private func icon(_ k: String) -> String {
         k == "Stipendio" ? "banknote" : k == initialKind ? "building.columns" : "plus.circle"
@@ -100,11 +101,14 @@ struct IncomesView: View {
                         Spacer()
                         Text((i.amount >= 0 ? "+" : "") + eur(i.amount)).bold().foregroundStyle(Theme.accent)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { editing = i }
                 }.onDelete { idx in idx.map { incomes[$0] }.forEach(ctx.delete) }
             }
             .navigationTitle("Entrate")
             .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
             .sheet(isPresented: $adding) { AddIncomeView() }
+            .sheet(item: $editing) { AddIncomeView(editing: $0) }
     }
 }
 
@@ -112,6 +116,8 @@ struct AddIncomeView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
     @Query private var accounts: [Account]
+    /// Entrata da modificare (nil = nuova).
+    var editing: Income? = nil
     @State private var kind = "Stipendio"
     @State private var amountText = ""
     @State private var date = Date()
@@ -125,9 +131,12 @@ struct AddIncomeView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Tipo", selection: $kind) {
-                    Text("Stipendio").tag("Stipendio"); Text("Altra entrata").tag("Altra entrata")
-                }.pickerStyle(.segmented)
+                if kind != initialKind {
+                    Picker("Tipo", selection: $kind) {
+                        Text("Stipendio").tag("Stipendio"); Text("Altra entrata").tag("Altra entrata")
+                        if kind == "Rimborso" { Text("Rimborso").tag("Rimborso") }
+                    }.pickerStyle(.segmented)
+                }
                 TextField("Importo (€)", text: $amountText).keyboardType(.decimalPad)
                 DatePicker("Data", selection: $date, displayedComponents: .date)
                 TextField("Nota (facoltativa)", text: $note)
@@ -137,24 +146,110 @@ struct AddIncomeView: View {
                     HStack { Text("Disponibile da spendere"); Spacer(); Text(eur(amount - saved)).bold() }
                 }
             }
-            .navigationTitle("Nuova entrata").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(editing == nil ? "Nuova entrata" : "Modifica entrata").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") {
                         guard amount > 0 else { return }
-                        ctx.insert(Income(amount: amount, saved: saved, kind: kind, date: date, note: note))
+                        if let e = editing {
+                            e.amount = amount; e.saved = saved; e.kind = kind; e.date = date; e.note = note
+                        } else {
+                            ctx.insert(Income(amount: amount, saved: saved, kind: kind, date: date, note: note))
+                        }
+                        try? ctx.save()
                         dismiss()
                     }
                 }
             }
             .onAppear {
-                if let a = accounts.first {
+                if let e = editing {
+                    // In modifica la quota a risparmio si mostra come importo fisso, quello già salvato.
+                    kind = e.kind; date = e.date; note = e.note
+                    amountText = amountString(e.amount)
+                    mode = 1; valueText = e.saved > 0 ? amountString(e.saved) : ""
+                } else if let a = accounts.first {
                     mode = a.salaryMode
                     valueText = a.salaryValue > 0 ? String(a.salaryValue) : ""
                 }
             }
         }
+    }
+}
+
+/// Importo per un campo di testo: "1250" o "1250,50".
+func amountString(_ v: Double) -> String {
+    v == v.rounded() ? String(Int(v)) : String(format: "%.2f", v).replacingOccurrences(of: ".", with: ",")
+}
+
+// MARK: - Stipendi ricevuti
+
+/// Stipendi di un mese (di solito uno).
+struct SalaryMonth: Identifiable {
+    let month: Date            // primo giorno del mese
+    let items: [Income]
+    var total: Double { items.reduce(0) { $0 + $1.amount } }
+    var id: Date { month }
+}
+
+/// Stipendi registrati raggruppati per mese, dal più recente.
+func salaryMonths(_ incomes: [Income]) -> [SalaryMonth] {
+    let cal = Calendar.current
+    return Dictionary(grouping: incomes.filter { $0.kind == "Stipendio" }) {
+        cal.date(from: cal.dateComponents([.year, .month], from: $0.date)) ?? $0.date
+    }
+    .map { SalaryMonth(month: $0.key, items: $0.value.sorted { $0.date > $1.date }) }
+    .sorted { $0.month > $1.month }
+}
+
+/// Media degli stipendi mensili registrati (0 se non ce ne sono).
+func salaryAverage(_ months: [SalaryMonth]) -> Double {
+    months.isEmpty ? 0 : months.reduce(0) { $0 + $1.total } / Double(months.count)
+}
+
+/// Righe degli stipendi: mese e importo; toccandone una si modifica.
+struct SalaryRows: View {
+    let months: [SalaryMonth]
+    @Binding var editing: Income?
+
+    var body: some View {
+        ForEach(months) { m in
+            Button { editing = m.items.first } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "banknote").foregroundStyle(.white)
+                        .frame(width: 34, height: 34).background(Theme.accent, in: Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(m.month.formatted(.dateTime.month(.wide).year()).capitalized).foregroundStyle(.primary)
+                        Text(m.items.count > 1 ? "\(m.items.count) accrediti" : "ricevuto il \(m.items[0].date.formatted(.dateTime.day().month(.abbreviated)))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(eur(m.total)).bold().foregroundStyle(.primary)
+                }
+            }
+        }
+    }
+}
+
+struct SalaryHistoryView: View {
+    @Query(sort: \Income.date, order: .reverse) private var incomes: [Income]
+    @State private var editing: Income?
+
+    var body: some View {
+        let months = salaryMonths(incomes)
+        List {
+            Section {
+                SalaryRows(months: months, editing: $editing)
+            } header: {
+                HStack {
+                    Text("Tutti gli stipendi")
+                    Spacer()
+                    if !months.isEmpty { Text("media \(eur(salaryAverage(months)))").textCase(nil) }
+                }
+            }
+        }
+        .navigationTitle("Stipendi")
+        .sheet(item: $editing) { AddIncomeView(editing: $0) }
     }
 }
 
