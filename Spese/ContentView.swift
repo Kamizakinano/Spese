@@ -10,6 +10,8 @@ struct ContentView: View {
     @Query private var recurring: [Recurring]
     @Query private var accounts: [Account]
     @AppStorage("lockOn") private var lockOn = false
+    @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
+    @State private var tab = 0
     @State private var locked = true
     @ObservedObject private var quick = QuickAddRouter.shared
 
@@ -23,13 +25,15 @@ struct ContentView: View {
             if accounts.isEmpty {
                 SetupView()
             } else {
-                TabView {
-                    HomeView().tabItem { Label("Spese", systemImage: "list.bullet.rectangle") }
-                    ContiView().tabItem { Label("Conti", systemImage: "creditcard") }
-                    SavingsView().tabItem { Label("Risparmi", systemImage: "banknote") }
-                    StatsView().tabItem { Label("Statistiche", systemImage: "chart.xyaxis.line") }
-                    SettingsView().tabItem { Label("Altro", systemImage: "gearshape") }
+                TabView(selection: $tab) {
+                    HomeView().tabItem { Label("Spese", systemImage: "list.bullet.rectangle") }.tag(0)
+                    ContiView().tabItem { Label("Conti", systemImage: "creditcard") }.tag(1)
+                    SavingsView().tabItem { Label("Risparmi", systemImage: "banknote") }.tag(2)
+                    StatsView().tabItem { Label("Statistiche", systemImage: "chart.xyaxis.line") }.tag(3)
+                    SettingsView().tabItem { Label("Altro", systemImage: "gearshape") }.tag(4)
                 }
+                // Cambiando colore si ridisegna tutta l'app, restando nella stessa scheda.
+                .id(appColor)
             }
         }
         .task {
@@ -583,9 +587,9 @@ struct HomeView: View {
 
 /// Colori del riquadro in cima alla Home.
 enum HeroStyle {
-    static let top = Color(hex: "1A5E44")
-    static let bottom = Color(hex: "0E4632")
-    static let mint = Color(hex: "4CC38A")
+    static var top: Color { Theme.color.top }
+    static var bottom: Color { Theme.color.bottom }
+    static var mint: Color { Theme.color.light }
     static let coral = Color(hex: "E8735F")
 }
 

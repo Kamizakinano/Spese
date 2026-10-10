@@ -30,3 +30,19 @@ final class StipendiTests: XCTestCase {
         XCTAssertEqual(parseAmount(amountString(1234.56)), 1234.56)
     }
 }
+
+/// Prove del colore dell'app.
+final class ColoreAppTests: XCTestCase {
+    func testVerdeDiPartenza() {
+        let d = UserDefaults.standard
+        let old = d.string(forKey: appColorKey)
+        defer { if let old { d.set(old, forKey: appColorKey) } else { d.removeObject(forKey: appColorKey) } }
+        d.removeObject(forKey: appColorKey)
+        XCTAssertEqual(Theme.color, .verde, "Chi installa l'app parte dal verde")
+        d.set("viola", forKey: appColorKey)
+        XCTAssertEqual(Theme.color, .viola)
+        d.set("sconosciuto", forKey: appColorKey)
+        XCTAssertEqual(Theme.color, .verde)
+        XCTAssertEqual(AppColor.allCases.map(\.name), ["Verde", "Blu", "Rosso", "Nero", "Rosa", "Viola"])
+    }
+}

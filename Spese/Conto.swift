@@ -217,14 +217,15 @@ struct SalaryRows: View {
             Button { editing = m.items.first } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "banknote").foregroundStyle(.white)
-                        .frame(width: 34, height: 34).background(Theme.accent, in: Circle())
+                        .frame(width: 40, height: 40).background(HeroStyle.bottom, in: Circle())
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(m.month.formatted(.dateTime.month(.wide).year()).capitalized).foregroundStyle(.primary)
+                        Text(m.month.formatted(.dateTime.month(.wide).year()).capitalized).font(.title3).foregroundStyle(HeroStyle.top)
                         Text(m.items.count > 1 ? "\(m.items.count) accrediti" : "ricevuto il \(m.items[0].date.formatted(.dateTime.day().month(.abbreviated)))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(eur(m.total)).bold().foregroundStyle(.primary)
+                    Text(eur(m.total)).font(.title3.bold()).foregroundStyle(HeroStyle.top)
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
             }
         }
