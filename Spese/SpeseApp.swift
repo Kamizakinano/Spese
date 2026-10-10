@@ -46,6 +46,7 @@ struct SpeseApp: App {
     var paidBy: String = ""          // chi ha pagato ("" = io)
     var splitJSON: String = ""       // divisione: {"Io": 10, "Marco": 10} in euro
     var needsAmount: Bool = false    // arrivata da Apple Pay senza un importo leggibile: da completare
+    var settledMethod: String = ""   // "Ti devono": incassato "carta" (sul conto) o "contanti"
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }
@@ -194,7 +195,7 @@ enum SharedStore {
         do {
             return try ModelContainer(for: Expense.self, MonthBudget.self, CategoryItem.self, Recurring.self,
                                       Account.self, Income.self, SavingsMove.self, Goal.self, CashMove.self,
-                                      Trip.self, TripPayment.self)
+                                      Trip.self, TripPayment.self, Debt.self)
         } catch {
             fatalError("Impossibile aprire i dati: \(error)")
         }
