@@ -22,17 +22,49 @@ struct ContiView: View {
     @State private var kind = "prelievo"
     @State private var showMove = false
     @State private var editingIncome: Income?
+    @State private var showBank = false
+    @State private var showCash = false
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var bank: Double { ledger.figures(for: Date()).left }
     private var cash: Double { ledger.cashBalance() }
 
-    private func row(_ icon: String, _ title: String, _ value: Double, _ color: Color) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon).foregroundStyle(.white).frame(width: 34, height: 34).background(color, in: Circle())
-            Text(title)
+    /// Riquadro bianco di Banca o Contanti: icona, nome, importo e freccia.
+    private func moneyCard(_ icon: String, _ title: String, _ subtitle: String?, _ value: Double, _ color: Color,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: icon).font(.body).foregroundStyle(.white)
+                        .frame(width: 40, height: 40).background(color, in: Circle())
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(title).font(.body).lineLimit(1).minimumScaleFactor(0.8)
+                        if let subtitle { Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                    }
+                }
+                HStack {
+                    Text(eur(value)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+            .foregroundStyle(.primary)
+            .padding(14).frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title)\(subtitle.map { " \($0)" } ?? ""), \(eur(value))")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// Riga con icona verde, testo e freccia (come le voci di un menu).
+    private func menuRow(_ title: String, _ icon: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon).font(.title3).foregroundStyle(HeroStyle.bottom).frame(width: 28)
+            Text(title).foregroundStyle(.primary)
             Spacer()
-            Text(eur(value)).bold()
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
         }
     }
 
@@ -40,24 +72,30 @@ struct ContiView: View {
         NavigationStack {
             List {
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Totale").font(.subheadline).opacity(0.85)
-                        Text(eur(bank + cash)).font(.system(size: 36, weight: .bold, design: .rounded))
-                        Text("Banca e contanti insieme. Entra in una delle due voci per il dettaglio.")
-                            .font(.footnote).opacity(0.9)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("TOTALE ATTIVO").font(.subheadline.weight(.medium)).tracking(0.5).opacity(0.75)
+                        Text(eur(bank + cash)).font(.system(size: 40, weight: .bold, design: .rounded))
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                        Text("Banca e contanti insieme. Tocca una voce per i dettagli.").font(.subheadline).opacity(0.9)
+                            .padding(.top, 14)
                     }
-                    .foregroundStyle(.white).padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(LinearGradient(colors: [Theme.accent, Color(hex: "0F6E56")],
+                    .foregroundStyle(.white).padding(22).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LinearGradient(colors: [HeroStyle.top, HeroStyle.bottom],
                                                startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 22))
+                                in: RoundedRectangle(cornerRadius: 24))
+                    .shadow(color: HeroStyle.bottom.opacity(0.25), radius: 12, y: 6)
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(Color.clear)
 
                 Section("Dove sono i tuoi soldi") {
-                    NavigationLink { BankView() } label: { row("creditcard", "Banca (carta)", bank, Color(hex: "2980B9")) }
-                    NavigationLink { CashView() } label: { row("banknote", "Contanti (portafoglio)", cash, Color(hex: "E67E22")) }
+                    HStack(spacing: 12) {
+                        moneyCard("creditcard", "Banca (carta)", nil, bank, Color(hex: "2980B9")) { showBank = true }
+                        moneyCard("banknote", "Contanti", "(portafoglio)", cash, Color(hex: "E67E22")) { showCash = true }
+                    }
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
 
                 let months = salaryMonths(incomes)
                 Section {
@@ -78,21 +116,25 @@ struct ContiView: View {
                 }
 
                 Section("Spostamenti") {
-                    Button { kind = "prelievo"; showMove = true } label: {
-                        Label("Ho prelevato contanti dalla banca", systemImage: "arrow.down.to.line")
-                    }
-                    Button { kind = "versamento"; showMove = true } label: {
-                        Label("Ho versato contanti in banca", systemImage: "arrow.up.to.line")
-                    }
+                    Button { kind = "prelievo"; showMove = true } label: { menuRow("Ho prelevato contanti dalla banca", "arrow.down.to.line") }
+                    Button { kind = "versamento"; showMove = true } label: { menuRow("Ho versato contanti in banca", "arrow.up.to.line") }
                 }
 
                 Section {
-                    NavigationLink { IncomesView() } label: { Label("Entrate e stipendio", systemImage: "arrow.down.circle") }
-                    NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
-                    NavigationLink { ApplePayLogView() } label: { Label("Registro pagamenti", systemImage: "list.bullet.clipboard") }
+                    NavigationLink { IncomesView() } label: {
+                        Label { Text("Entrate e stipendio") } icon: { Image(systemName: "arrow.down.circle").foregroundStyle(Theme.accent) }
+                    }
+                    NavigationLink { CardLinkView() } label: {
+                        Label { Text("Collega la carta (Apple Pay)") } icon: { Image(systemName: "creditcard.and.123").foregroundStyle(Theme.accent) }
+                    }
+                    NavigationLink { ApplePayLogView() } label: {
+                        Label { Text("Registro pagamenti") } icon: { Image(systemName: "list.bullet.clipboard").foregroundStyle(Theme.accent) }
+                    }
                 }
             }
-            .navigationTitle("Conti")
+            .navigationTitle("Conti").navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showBank) { BankView() }
+            .navigationDestination(isPresented: $showCash) { CashView() }
             .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
             .sheet(item: $editingIncome) { AddIncomeView(editing: $0) }
         }
