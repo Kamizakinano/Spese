@@ -31,6 +31,7 @@ struct SettingsView: View {
                     NavigationLink { TripsView() } label: { Label("Viaggi", systemImage: "airplane") }
                     NavigationLink { TagsView() } label: { Label("Tag", systemImage: "tag") }
                     NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
+                    NavigationLink { DebtsView() } label: { Label("Devo dare", systemImage: "person.crop.circle.badge.minus") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
                     NavigationLink { ApplePayLogView() } label: { Label("Registro Apple Pay", systemImage: "list.bullet.clipboard") }
                 }
