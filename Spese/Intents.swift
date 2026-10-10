@@ -60,6 +60,7 @@ struct AddExpenseIntent: AppIntent {
             ctx.insert(e)
             try ctx.save()
             updateWidgetSnapshot(ctx)
+            runAutoBackup(ctx)
             if e.needsAmount {
                 ApplePayLog.finish(entry, "Importo non leggibile: salvata da completare in \(cat)")
             } else {

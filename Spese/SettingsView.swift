@@ -297,7 +297,7 @@ struct AutoBackupView: View {
     var body: some View {
         List {
             Section {
-                Text("Scegli una cartella in iCloud Drive: una volta a settimana l'app ci salva da sola una copia di tutti i dati. Così non perdi niente anche se cancelli l'app o cambi iPhone. Vengono tenuti gli ultimi 8 backup.")
+                Text("Scegli una cartella in iCloud Drive: ogni 12 ore l'app ci salva da sola una copia di tutti i dati, quando la apri o quando registra un pagamento da Comandi rapidi. Così non perdi niente anche se cancelli l'app o cambi iPhone. Vengono tenuti gli ultimi 14 backup (circa una settimana).")
                     .font(.subheadline)
             }
             if let folder {
@@ -326,6 +326,11 @@ struct AutoBackupView: View {
             }
         }
         .navigationTitle("Backup automatico")
+        // La data si rilegge ogni volta che si apre la pagina, così mostra sempre l'ultimo backup vero.
+        .onAppear {
+            folder = autoBackupFolder()
+            last = UserDefaults.standard.object(forKey: autoBackupLastKey) as? Date
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { r in
             guard case .success(let url) = r else { return }
             if setAutoBackupFolder(url) {

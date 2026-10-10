@@ -404,10 +404,10 @@ let autoBackupLastKey = "autoBackupLast"
 
 /// Scrive un backup con la data nel nome e tiene solo gli ultimi `keep`.
 @discardableResult
-func writeBackup(_ ctx: ModelContext, to folder: URL, now: Date = Date(), keep: Int = 8) throws -> URL {
+func writeBackup(_ ctx: ModelContext, to folder: URL, now: Date = Date(), keep: Int = 14) throws -> URL {
     guard let data = backupData(ctx) else { throw CocoaError(.fileWriteUnknown) }
     let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+    f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd-HHmm"
     let url = folder.appendingPathComponent("Spese-backup-\(f.string(from: now)).json")
     try data.write(to: url, options: .atomic)
     let fm = FileManager.default
@@ -418,10 +418,10 @@ func writeBackup(_ ctx: ModelContext, to folder: URL, now: Date = Date(), keep: 
     return url
 }
 
-/// Il backup automatico si fa una volta a settimana.
+/// Il backup automatico si fa ogni 12 ore (quando l'app viene aperta o riceve un pagamento).
 func autoBackupDue(last: Date?, now: Date = Date()) -> Bool {
     guard let last else { return true }
-    return now.timeIntervalSince(last) >= 7 * 24 * 3600
+    return now.timeIntervalSince(last) >= 12 * 3600
 }
 
 /// Cartella scelta dall'utente (per esempio in iCloud Drive), ricordata con un segnalibro.
@@ -441,7 +441,7 @@ func setAutoBackupFolder(_ url: URL) -> Bool {
     return true
 }
 
-/// Fa il backup nella cartella scelta se è passata una settimana (o subito con `force`).
+/// Fa il backup nella cartella scelta se sono passate 12 ore (o subito con `force`).
 /// Restituisce un messaggio d'errore, oppure nil se è andato bene o non serviva.
 @discardableResult
 func runAutoBackup(_ ctx: ModelContext, force: Bool = false) -> String? {

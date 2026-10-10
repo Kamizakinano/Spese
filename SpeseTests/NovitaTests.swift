@@ -38,28 +38,30 @@ final class NovitaTests: XCTestCase {
     }
 
     // 4. Backup automatico.
-    func testBackupSettimanale() {
+    func testBackupOgni12Ore() {
         XCTAssertTrue(autoBackupDue(last: nil, now: d(2026, 10, 9)))
-        XCTAssertFalse(autoBackupDue(last: d(2026, 10, 9), now: d(2026, 10, 15)))
-        XCTAssertTrue(autoBackupDue(last: d(2026, 10, 9), now: d(2026, 10, 16)))
+        XCTAssertFalse(autoBackupDue(last: d(2026, 10, 9), now: d(2026, 10, 9).addingTimeInterval(11 * 3600)))
+        XCTAssertTrue(autoBackupDue(last: d(2026, 10, 9), now: d(2026, 10, 9).addingTimeInterval(12 * 3600)))
     }
 
     @MainActor
-    func testBackupScrittoERipristinabileETieneGliUltimi8() throws {
+    func testBackupScrittoERipristinabileETieneGliUltimi14() throws {
         let ctx = SharedStore.container.mainContext
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("backup-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let url = try writeBackup(ctx, to: dir, now: d(2026, 10, 9))
-        XCTAssertEqual(url.lastPathComponent, "Spese-backup-2026-10-09.json")
+        let first = d(2026, 10, 9)
+        let url = try writeBackup(ctx, to: dir, now: first)
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd-HHmm"
+        XCTAssertEqual(url.lastPathComponent, "Spese-backup-\(f.string(from: first)).json", "Data e ora nel nome: due backup al giorno non si sovrascrivono")
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         XCTAssertNoThrow(try dec.decode(Backup.self, from: Data(contentsOf: url)), "Il file deve essere un backup ripristinabile")
 
-        for week in 1...10 { try writeBackup(ctx, to: dir, now: d(2026, 10, 9).addingTimeInterval(Double(week) * 7 * 86400)) }
+        for i in 1...20 { try writeBackup(ctx, to: dir, now: first.addingTimeInterval(Double(i) * 12 * 3600)) }
         let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("Spese-backup-") }
-        XCTAssertEqual(files.count, 8, "Vengono tenuti solo gli ultimi 8 backup")
-        XCTAssertFalse(files.contains("Spese-backup-2026-10-09.json"), "Il più vecchio viene cancellato")
+        XCTAssertEqual(files.count, 14, "Vengono tenuti solo gli ultimi 14 backup")
+        XCTAssertFalse(files.contains(url.lastPathComponent), "Il più vecchio viene cancellato")
     }
 
     // 6. Riepilogo del periodo.
