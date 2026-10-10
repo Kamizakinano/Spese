@@ -102,6 +102,9 @@ struct SpeseShortcuts: AppShortcutsProvider {
         AppShortcut(intent: QuickAddIntent(),
                     phrases: ["Spesa veloce in \(.applicationName)", "Nuova spesa in \(.applicationName)"],
                     shortTitle: "Spesa veloce", systemImageName: "plus.circle")
+        AppShortcut(intent: AddFromBankEmailIntent(),
+                    phrases: ["Leggi email della banca in \(.applicationName)"],
+                    shortTitle: "Leggi email della banca", systemImageName: "envelope")
     }
 }
 

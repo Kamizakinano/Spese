@@ -395,8 +395,18 @@ struct CardLinkView: View {
             } footer: {
                 Text("Spento: la spesa viene registrata senza nessun avviso. La trovi nell'elenco quando apri l'app.")
             }
+            Section("Dalle email della banca") {
+                Text("Se la banca ti manda un'email per ogni movimento, l'app può leggerla da sola: pagamenti con carta (anche online), bonifici ricevuti e prelievi. Serve che l'account email sia aggiunto nell'app Mail di iPhone.")
+                    .font(.subheadline)
+                step(1, "In Comandi rapidi apri Automazione, tocca + e scegli Email.")
+                step(2, "In Mittente scegli l'indirizzo della banca (per Intesa Sanpaolo: comunicazioni@intesasanpaolo.com). Lascia vuoti gli altri campi.")
+                step(3, "Scegli Esegui immediatamente e spegni Notifica quando eseguito. Tocca Avanti.")
+                step(4, "Tocca Nuovo comando rapido vuoto, poi Aggiungi azione: cerca Spese e scegli Leggi email della banca.")
+                step(5, "Tocca Testo e scegli Input comando rapido, poi tocca la variabile e scegli Contenuto (o Corpo). Tocca la freccia, poi Oggetto e scegli allo stesso modo Oggetto.")
+                step(6, "Tocca Fine. Le email che non parlano di soldi vengono ignorate.")
+            }
             Section {
-                NavigationLink { ApplePayLogView() } label: { Label("Registro Apple Pay", systemImage: "list.bullet.clipboard") }
+                NavigationLink { ApplePayLogView() } label: { Label("Registro pagamenti", systemImage: "list.bullet.clipboard") }
             } footer: {
                 Text("Mostra cosa è arrivato da ogni pagamento e se è stato registrato. Utile se una spesa non entra.")
             }

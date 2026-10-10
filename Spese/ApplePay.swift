@@ -9,6 +9,7 @@ struct ApplePayLogEntry: Codable, Identifiable {
     var amount: String
     var merchant: String
     var result: String
+    var source: String? = nil   // "Email" per le email della banca, nil = Apple Pay
 }
 
 /// Ultime chiamate dell'azione "Aggiungi spesa", salvate nelle impostazioni dell'app (le più recenti prima).
@@ -28,8 +29,8 @@ enum ApplePayLog {
     /// Annota l'arrivo di un pagamento. Finché non si chiama `finish` l'esito resta "in corso":
     /// se l'app si chiudesse a metà, nel registro si vedrebbe.
     @discardableResult
-    static func begin(amount: String, merchant: String, defaults: UserDefaults = .standard) -> UUID {
-        let e = ApplePayLogEntry(date: Date(), amount: amount, merchant: merchant, result: "In corso (interrotta?)")
+    static func begin(amount: String, merchant: String, source: String? = nil, defaults: UserDefaults = .standard) -> UUID {
+        let e = ApplePayLogEntry(date: Date(), amount: amount, merchant: merchant, result: "In corso (interrotta?)", source: source)
         save([e] + all(defaults), defaults)
         return e.id
     }
@@ -52,7 +53,7 @@ struct ApplePayLogView: View {
     var body: some View {
         List {
             Section {
-                Text("Ogni volta che Comandi rapidi passa un pagamento all'app, qui trovi cosa è arrivato esattamente e com'è andata. Serve a capire perché una spesa non è entrata.")
+                Text("Ogni volta che Comandi rapidi passa un pagamento all'app (da Apple Pay o da un'email della banca), qui trovi cosa è arrivato esattamente e com'è andata. Serve a capire perché un movimento non è entrato.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if items.isEmpty {
@@ -61,12 +62,16 @@ struct ApplePayLogView: View {
                 Section("Ultimi pagamenti") {
                     ForEach(items) { e in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(e.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
+                            Text(e.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()) + " · " + (e.source ?? "Apple Pay"))
                                 .font(.caption).foregroundStyle(.secondary)
-                            Text("Importo: \(show(e.amount))").font(.subheadline)
-                            Text("Esercente: \(show(e.merchant))").font(.subheadline)
+                            if e.source == "Email" {
+                                Text(show(e.amount)).font(.footnote).foregroundStyle(.secondary).lineLimit(4)
+                            } else {
+                                Text("Importo: \(show(e.amount))").font(.subheadline)
+                                Text("Esercente: \(show(e.merchant))").font(.subheadline)
+                            }
                             Text(e.result).font(.subheadline.bold())
-                                .foregroundStyle(e.result.hasPrefix("Registrata") ? Theme.accent : Color.orange)
+                                .foregroundStyle(e.result.contains("registrat") || e.result.hasPrefix("Registrata") ? Theme.accent : Color.orange)
                         }
                         .textSelection(.enabled)
                         .padding(.vertical, 2)
@@ -77,7 +82,7 @@ struct ApplePayLogView: View {
                 }
             }
         }
-        .navigationTitle("Registro Apple Pay")
+        .navigationTitle("Registro pagamenti")
         .onAppear { items = ApplePayLog.all() }
     }
 }
