@@ -6,6 +6,7 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(\.modelContext) private var ctx
     @AppStorage("theme") private var theme = 0
+    @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
     @AppStorage("reminderOn") private var reminderOn = false
     @AppStorage("reminderHour") private var reminderHour = 21
     @State private var csvURL: URL?
@@ -22,6 +23,30 @@ struct SettingsView: View {
                     Picker("Tema", selection: $theme) {
                         Text("Sistema").tag(0); Text("Chiaro").tag(1); Text("Scuro").tag(2)
                     }.pickerStyle(.segmented)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Colore dell'app")
+                        HStack(spacing: 0) {
+                            ForEach(AppColor.allCases) { c in
+                                Button { appColor = c.rawValue } label: {
+                                    VStack(spacing: 4) {
+                                        Circle().fill(c.swatch).frame(width: 34, height: 34)
+                                            .overlay {
+                                                if appColor == c.rawValue {
+                                                    Image(systemName: "checkmark").font(.footnote.bold()).foregroundStyle(.white)
+                                                }
+                                            }
+                                            .overlay(Circle().strokeBorder(Color.primary.opacity(appColor == c.rawValue ? 0.35 : 0), lineWidth: 2).padding(-4))
+                                        Text(c.name).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(c.name)
+                                .accessibilityAddTraits(appColor == c.rawValue ? .isSelected : [])
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
                 Section("Personalizza") {
                     NavigationLink { SalaryView() } label: { Label("Stipendio e risparmi", systemImage: "eurosign.circle") }

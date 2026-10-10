@@ -13,6 +13,7 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
 @main
 struct SpeseApp: App {
     @AppStorage("theme") private var theme = 0
+    @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
     static let notifDelegate = NotifDelegate()
     init() { UNUserNotificationCenter.current().delegate = SpeseApp.notifDelegate }
 
@@ -20,7 +21,7 @@ struct SpeseApp: App {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
-                .tint(Theme.accent)
+                .tint((AppColor(rawValue: appColor) ?? .verde).accent)
         }
         .modelContainer(SharedStore.container)
     }
@@ -84,7 +85,63 @@ struct SpeseApp: App {
 
 // MARK: - Utilità
 
-enum Theme { static let accent = Color(hex: "1D9E75") }
+/// Colori scelti in Altro → Aspetto. Il verde è quello di partenza.
+enum AppColor: String, CaseIterable, Identifiable {
+    case verde, blu, rosso, nero, rosa, viola
+    var id: String { rawValue }
+    var name: String { rawValue.capitalized }
+    /// Colore principale (testi in evidenza, pulsanti, icone), riquadri grandi (dal chiaro allo scuro) e tono chiaro.
+    var accent: Color {
+        switch self {
+        case .verde: return Color(hex: "1D9E75")
+        case .blu: return Color(hex: "2F7FE0")
+        case .rosso: return Color(hex: "D64545")
+        // Nero col tema chiaro, grigio col tema scuro (così resta leggibile su entrambi gli sfondi).
+        case .nero: return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.62, alpha: 1) : UIColor(white: 0.11, alpha: 1) })
+        case .rosa: return Color(hex: "D9468E")
+        case .viola: return Color(hex: "8E5BD0")
+        }
+    }
+    var top: Color {
+        switch self {
+        case .verde: return Color(hex: "1A5E44")
+        case .blu: return Color(hex: "1E4E8C")
+        case .rosso: return Color(hex: "8E2A2A")
+        case .nero: return Color(hex: "3A3A3C")
+        case .rosa: return Color(hex: "A2336C")
+        case .viola: return Color(hex: "5B3A93")
+        }
+    }
+    var bottom: Color {
+        switch self {
+        case .verde: return Color(hex: "0E4632")
+        case .blu: return Color(hex: "12325E")
+        case .rosso: return Color(hex: "5E1818")
+        case .nero: return Color(hex: "161618")
+        case .rosa: return Color(hex: "6E1F48")
+        case .viola: return Color(hex: "3B2466")
+        }
+    }
+    var light: Color {
+        switch self {
+        case .verde: return Color(hex: "4CC38A")
+        case .blu: return Color(hex: "6FB1FF")
+        case .rosso: return Color(hex: "FF8A80")
+        case .nero: return Color(hex: "B0B0B5")
+        case .rosa: return Color(hex: "FF9CC8")
+        case .viola: return Color(hex: "C3A6F2")
+        }
+    }
+    /// Colore per il pallino di scelta (il nero si vede nero anche col tema scuro).
+    var swatch: Color { self == .nero ? Color(hex: "1C1C1E") : accent }
+}
+
+let appColorKey = "appColor"
+
+enum Theme {
+    static var color: AppColor { AppColor(rawValue: UserDefaults.standard.string(forKey: appColorKey) ?? "") ?? .verde }
+    static var accent: Color { color.accent }
+}
 
 extension Color {
     init(hex: String) {
