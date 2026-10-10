@@ -19,6 +19,8 @@ final class AddExpenseIntentTests: XCTestCase {
         XCTAssertEqual(guessCategory(merchant: "Bar Roma", available: cats), "Pranzi/Cene fuori")
         XCTAssertEqual(guessCategory(merchant: "Amazon EU", available: cats), "Shopping")
         XCTAssertEqual(guessCategory(merchant: "Negozio sconosciuto", available: cats), "Altro")
+        XCTAssertEqual(guessCategory(merchant: "Zalando Gift Card", available: cats), giftCardCategory)
+        XCTAssertEqual(guessCategory(merchant: "Buono regalo Amazon", available: cats), giftCardCategory)
     }
 
     /// Esegue l'azione come farebbe Comandi rapidi e controlla la spesa salvata.
@@ -45,19 +47,45 @@ final class AddExpenseIntentTests: XCTestCase {
         XCTAssertFalse(UserDefaults.standard.bool(forKey: applePayNotifyKey), "Le notifiche devono essere spente di partenza")
     }
 
+    /// Importo illeggibile ma esercente presente: la spesa si salva "da completare" e finisce nel registro.
     @MainActor
-    func testImportoNonValidoNonRegistraNulla() async throws {
+    func testImportoIllegibileSalvaDaCompletare() async throws {
+        let ctx = SharedStore.container.mainContext
+        let marker = "Bar Prova \(UUID().uuidString.prefix(6))"
+        defer {
+            for e in (try? ctx.fetch(FetchDescriptor<Expense>())) ?? [] where e.note == marker { ctx.delete(e) }
+            try? ctx.save()
+        }
+        var intent = AddExpenseIntent()
+        intent.amount = "niente"
+        intent.merchant = marker
+        intent.method = .carta
+        _ = try await intent.perform()
+        let saved = try ctx.fetch(FetchDescriptor<Expense>()).filter { $0.note == marker }
+        XCTAssertEqual(saved.count, 1, "La spesa deve essere salvata anche senza importo")
+        XCTAssertEqual(saved.first?.needsAmount, true)
+        XCTAssertEqual(saved.first?.amount, 0)
+        let log = ApplePayLog.all().first
+        XCTAssertEqual(log?.merchant, marker)
+        XCTAssertEqual(log?.amount, "niente")
+        XCTAssertTrue(log?.result.contains("da completare") == true, "Il registro deve dire com'è andata: \(log?.result ?? "")")
+    }
+
+    /// Senza importo e senza esercente non c'è niente da salvare: errore, ma il registro lo annota.
+    @MainActor
+    func testTuttoVuotoNonRegistraNulla() async throws {
         let ctx = SharedStore.container.mainContext
         let before = try ctx.fetchCount(FetchDescriptor<Expense>())
         var intent = AddExpenseIntent()
-        intent.amount = "niente"
-        intent.merchant = "Errore"
+        intent.amount = ""
+        intent.merchant = ""
         intent.method = .carta
         do {
             _ = try await intent.perform()
-            XCTFail("Con un importo non valido l'azione dovrebbe dare errore")
+            XCTFail("Senza importo né esercente l'azione dovrebbe dare errore")
         } catch {}
         XCTAssertEqual(try ctx.fetchCount(FetchDescriptor<Expense>()), before)
+        XCTAssertTrue(ApplePayLog.all().first?.result.hasPrefix("Non registrata") == true)
     }
 
     func testAzioneDisponibileInComandiRapidi() {

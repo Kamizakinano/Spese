@@ -7,21 +7,41 @@ targets:
   Spese:
     type: application
     platform: iOS
-    sources: [Spese]
+    sources: [Spese, Shared]
+    dependencies:
+      - target: SpeseWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tuonome.spese   # cambia "tuonome"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Config/Spese-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/Spese.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Spese
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "2.7"
+        MARKETING_VERSION: "2.8"
         CURRENT_PROJECT_VERSION: "3"
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSFaceIDUsageDescription: "Sblocca le tue spese"
         INFOPLIST_KEY_NSCameraUsageDescription: "Serve per fotografare gli scontrini"
+  SpeseWidget:
+    type: app-extension
+    platform: iOS
+    sources: [SpeseWidget, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tuonome.spese.widget
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Config/SpeseWidget-Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Spese
+        CODE_SIGN_ENTITLEMENTS: Config/SpeseWidget.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "2.8"
+        CURRENT_PROJECT_VERSION: "3"
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
   SpeseUITests:
     type: bundle.ui-testing
     platform: iOS

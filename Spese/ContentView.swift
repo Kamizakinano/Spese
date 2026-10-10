@@ -11,6 +11,12 @@ struct ContentView: View {
     @Query private var accounts: [Account]
     @AppStorage("lockOn") private var lockOn = false
     @State private var locked = true
+    @ObservedObject private var quick = QuickAddRouter.shared
+
+    /// La spesa veloce si apre solo con l'app sbloccata e già configurata.
+    private var quickShown: Binding<Bool> {
+        Binding(get: { quick.show && !accounts.isEmpty && !(lockOn && locked) }, set: { quick.show = $0 })
+    }
 
     var body: some View {
         Group {
@@ -31,17 +37,24 @@ struct ContentView: View {
             seed()
             generateAll()
             if !accounts.isEmpty { runAutoBackup(ctx) }
+            updateWidgetSnapshot(ctx)
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            await scheduleSubscriptionReminders(ctx)
         }
+        .onOpenURL { url in if url.host == quickAddURL.host { quick.show = true } }
+        .sheet(isPresented: quickShown) { QuickAddView() }
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
             if p == .active {
                 generateAll()
                 if !accounts.isEmpty { runAutoBackup(ctx) }
                 if lockOn && locked { authenticate() }
+                updateWidgetSnapshot(ctx)
+                Task { await scheduleSubscriptionReminders(ctx) }
             }
             if p == .background {
                 try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa
+                updateWidgetSnapshot(ctx)
                 if lockOn { locked = true }
             }
         }
@@ -59,11 +72,21 @@ struct ContentView: View {
     }
 
     private func seed() {
-        let n = (try? ctx.fetchCount(FetchDescriptor<CategoryItem>())) ?? 0
-        guard n == 0 else { return }
-        for (i, c) in defaultCategories.enumerated() {
-            ctx.insert(CategoryItem(name: c.0, icon: c.1, colorHex: c.2, order: i))
+        let existing = (try? ctx.fetch(FetchDescriptor<CategoryItem>())) ?? []
+        if existing.isEmpty {
+            for (i, c) in defaultCategories.enumerated() {
+                ctx.insert(CategoryItem(name: c.0, icon: c.1, colorHex: c.2, order: i))
+            }
+        } else if !UserDefaults.standard.bool(forKey: giftCardAddedKey),
+                  !existing.contains(where: { $0.name == giftCardCategory }),
+                  let gift = defaultCategories.first(where: { $0.0 == giftCardCategory }) {
+            // Chi aveva già le categorie riceve la nuova Gift Card prima di "Altro".
+            let other = existing.first { $0.name == "Altro" }
+            let order = other?.order ?? ((existing.map(\.order).max() ?? 0) + 1)
+            if let other { other.order += 1 }
+            ctx.insert(CategoryItem(name: gift.0, icon: gift.1, colorHex: gift.2, order: order))
         }
+        UserDefaults.standard.set(true, forKey: giftCardAddedKey)
     }
 
     private func generateAll() {
@@ -238,6 +261,29 @@ struct HomeView: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
 
+                let pending = all.filter(\.needsAmount)
+                if !pending.isEmpty {
+                    Section {
+                        ForEach(pending) { e in
+                            Button { editing = e } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "exclamationmark.circle.fill").font(.title2).foregroundStyle(.orange)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(e.note.isEmpty ? "Pagamento con Apple Pay" : e.note).bold().foregroundStyle(.primary)
+                                        Text("\(e.date.formatted(.dateTime.day().month(.abbreviated).hour().minute())) · tocca per inserire l'importo")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Da completare")
+                    } footer: {
+                        Text("Apple Pay non ha passato un importo leggibile: la spesa è salvata, manca solo la cifra.")
+                    }
+                }
+
                 if let t = activeTrip(trips) {
                     Section {
                         NavigationLink { TripDetailView(trip: t) } label: {
@@ -349,7 +395,9 @@ struct HomeView: View {
                                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
-                            Text(eur(e.amount)).font(.body.bold())
+                            Text(e.needsAmount ? "Da completare" : eur(e.amount))
+                                .font(e.needsAmount ? .caption.bold() : .body.bold())
+                                .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { editing = e }
