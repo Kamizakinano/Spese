@@ -281,18 +281,39 @@ struct HomeView: View {
 
                 if !byCat.isEmpty {
                     Section("Per categoria") {
-                        Chart(byCat) { i in
-                            SectorMark(angle: .value("Totale", i.total), innerRadius: .ratio(0.62), angularInset: 1.5)
-                                .foregroundStyle(i.color).cornerRadius(4)
-                        }.frame(height: 190)
+                        ZStack {
+                            // Traccia chiara interna, una per categoria, sotto l'anello pieno.
+                            Chart(byCat) { i in
+                                SectorMark(angle: .value("Totale", i.total), innerRadius: .ratio(0.64), outerRadius: .ratio(0.86), angularInset: 1.5)
+                                    .foregroundStyle(i.color.opacity(0.14))
+                            }
+                            Chart(byCat) { i in
+                                SectorMark(angle: .value("Totale", i.total), innerRadius: .ratio(0.80), angularInset: 1.5)
+                                    .foregroundStyle(i.color).cornerRadius(6)
+                            }
+                            Text(eur(total)).font(.system(size: 30, weight: .regular, design: .rounded))
+                                .foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                                .frame(maxWidth: 140)
+                        }
+                        .frame(height: 220).padding(.vertical, 8)
                         ForEach(byCat) { i in
-                            HStack {
-                                Label(i.name, systemImage: i.icon).foregroundStyle(i.color)
-                                Spacer()
-                                Text(eur(i.total))
-                                Text("\(Int((i.total / total * 100).rounded()))%")
-                                    .foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
-                            }.font(.subheadline)
+                            let share = total > 0 ? i.total / total : 0
+                            HStack(spacing: 12) {
+                                Image(systemName: i.icon).font(.body).foregroundStyle(i.color)
+                                    .frame(width: 40, height: 40)
+                                    .background(i.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+                                    .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(i.color.opacity(0.7), lineWidth: 1.5))
+                                Text(i.name).foregroundStyle(i.color).lineLimit(1).minimumScaleFactor(0.8)
+                                Spacer(minLength: 6)
+                                Text(eur(i.total)).lineLimit(1)
+                                VStack(alignment: .trailing, spacing: 3) {
+                                    Text("\(Int((share * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary)
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.secondary.opacity(0.18))
+                                        Capsule().fill(i.color).frame(width: 46 * share)
+                                    }.frame(width: 46, height: 4)
+                                }
+                            }
                         }
                     }
                 }
@@ -320,15 +341,15 @@ struct HomeView: View {
                     ForEach(shown) { e in
                         let l = look(e.categoryRaw)
                         HStack(spacing: 12) {
-                            Image(systemName: l.icon).foregroundStyle(.white)
-                                .frame(width: 34, height: 34).background(l.color, in: Circle())
-                            VStack(alignment: .leading) {
-                                Text(e.note.isEmpty ? e.categoryRaw : e.note)
+                            Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(.white)
+                                .frame(width: 42, height: 42).background(l.color, in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(e.note.isEmpty ? e.categoryRaw : e.note).lineLimit(1)
                                 Text(rowDetail(e))
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
-                            Text(eur(e.amount)).bold()
+                            Text(eur(e.amount)).font(.body.bold())
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { editing = e }

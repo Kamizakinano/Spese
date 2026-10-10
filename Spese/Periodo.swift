@@ -157,16 +157,35 @@ struct PeriodSummariesLinks: View {
                 NavigationLink {
                     PeriodSummaryView(title: "Periodo in corso", summary: current, previous: prev)
                 } label: {
-                    HStack { Label("Periodo in corso", systemImage: "calendar"); Spacer(); Text(eur(current.total)).foregroundStyle(.secondary) }
+                    periodRow("Periodo in corso", icon: "calendar", total: current.total, dates: current)
                 }
                 if let prev {
                     NavigationLink {
                         PeriodSummaryView(title: "Periodo precedente", summary: prev, previous: beforePrev)
                     } label: {
-                        HStack { Label("Periodo precedente", systemImage: "clock.arrow.circlepath"); Spacer(); Text(eur(prev.total)).foregroundStyle(.secondary) }
+                        periodRow("Periodo precedente", icon: "clock.arrow.circlepath", total: prev.total, dates: nil)
                     }
                 }
             }
+        }
+    }
+
+    /// Riga con icona verde quadrata, titolo, date (facoltative) e totale.
+    private func periodRow(_ title: String, icon: String, total: Double, dates: PeriodSummary?) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.body.weight(.semibold)).foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Theme.accent.opacity(0.75), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                if let d = dates {
+                    let last = Calendar.current.date(byAdding: .day, value: -1, to: d.end) ?? d.end
+                    Text("\(d.start.formatted(.dateTime.day().month(.abbreviated))) – \(last.formatted(.dateTime.day().month(.abbreviated)))")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Text(eur(total)).foregroundStyle(.secondary)
         }
     }
 }

@@ -55,26 +55,47 @@ struct StatsView: View {
                 let today = max(cal.component(.day, from: Date()), 1)
                 PeriodSummariesLinks()
                 Section("Questo mese") {
-                    HStack { Text("Media giornaliera"); Spacer(); Text(eur(total / Double(today))).bold() }
-                    HStack { Text("Numero di spese"); Spacer(); Text("\(current.count)").bold() }
-                    if let top = current.max(by: { $0.amount < $1.amount }) {
-                        HStack { Text("Spesa più alta"); Spacer(); Text(eur(top.amount)).bold() }
+                    HStack(spacing: 0) {
+                        statColumn("Media\ngiornaliera", eur(total / Double(today)))
+                        Divider().frame(height: 44)
+                        statColumn("Numero di\nspese", "\(current.count)")
+                        Divider().frame(height: 44)
+                        statColumn("Spesa\npiù alta", current.max(by: { $0.amount < $1.amount }).map { eur($0.amount) } ?? "–")
                     }
+                    .padding(.vertical, 4)
                 }
                 Section("Andamento del mese") {
-                    Chart {
-                        ForEach(points) { p in
-                            AreaMark(x: .value("Giorno", p.day), y: .value("Speso", p.cum))
-                                .foregroundStyle(Theme.accent.opacity(0.2))
-                            LineMark(x: .value("Giorno", p.day), y: .value("Speso", p.cum))
-                                .foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 14) {
+                            Spacer()
+                            if budget > 0 { legendDot(.red, "Disponibilità") }
+                            legendDot(Theme.accent, "Spese")
                         }
+                        Chart {
+                            ForEach(points) { p in
+                                AreaMark(x: .value("Giorno", p.day), y: .value("Speso", p.cum))
+                                    .foregroundStyle(Theme.accent.opacity(0.2))
+                                LineMark(x: .value("Giorno", p.day), y: .value("Speso", p.cum))
+                                    .foregroundStyle(Theme.accent).lineStyle(StrokeStyle(lineWidth: 2.5))
+                            }
+                            if budget > 0 {
+                                RuleMark(y: .value("Budget", budget))
+                                    .foregroundStyle(.red).lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                            }
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: 5)) { _ in
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                                AxisValueLabel()
+                            }
+                        }
+                        .frame(height: 200)
                         if budget > 0 {
-                            RuleMark(y: .value("Budget", budget))
-                                .foregroundStyle(.red).lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                            Divider()
+                            Text("Linea rossa = soldi a disposizione nel mese").font(.caption).foregroundStyle(.secondary)
                         }
-                    }.frame(height: 190)
-                    if budget > 0 { Text("Linea rossa = soldi a disposizione nel mese").font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .padding(.vertical, 4)
                 }
                 Section("Entrate e uscite, ultimi 6 mesi") {
                     Chart {
@@ -93,6 +114,21 @@ struct StatsView: View {
                 Section { NavigationLink { TagsView() } label: { Label("Totale per viaggio o tag", systemImage: "tag") } }
             }
             .navigationTitle("Statistiche")
+        }
+    }
+
+    private func statColumn(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(value).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func legendDot(_ color: Color, _ title: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(title).font(.footnote)
         }
     }
 }

@@ -41,6 +41,15 @@ final class SpeseUITests: XCTestCase {
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), "La finestra non si è chiusa dopo Salva")
     }
 
+    /// Entra in una voce di Conti (Banca o Contanti), modifica il saldo e torna indietro.
+    private func editBalance(in link: String, _ button: String, to value: String) {
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", link)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Manca la voce \(link)")
+        row.tap()
+        editBalance(button, to: value)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+    }
+
     func testModificaSaldiBancaEContanti() {
         app.launch()
 
@@ -61,11 +70,11 @@ final class SpeseUITests: XCTestCase {
         app.tabBars.buttons["Conti"].tap()
         expectText("050,00", "Il totale iniziale dovrebbe essere 1.050 €")
 
-        editBalance("Modifica soldi in banca", to: "800")
+        editBalance(in: "Banca (carta)", "Modifica saldo in banca", to: "800")
         expectText("800,00", "La banca dovrebbe essere 800 €")
         expectText("850,00", "Il totale dovrebbe essere 850 €")
 
-        editBalance("Modifica contanti", to: "20")
+        editBalance(in: "Contanti (portafoglio)", "Modifica saldo contanti", to: "20")
         expectText("820,00", "Il totale dovrebbe essere 820 € (800 + 20)")
 
         // I valori restano anche riaprendo l'app.
