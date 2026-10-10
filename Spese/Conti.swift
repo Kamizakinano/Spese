@@ -21,6 +21,7 @@ struct ContiView: View {
     @Query private var payments: [TripPayment]
     @State private var kind = "prelievo"
     @State private var showMove = false
+    @State private var editingIncome: Income?
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var bank: Double { ledger.figures(for: Date()).left }
@@ -58,6 +59,24 @@ struct ContiView: View {
                     NavigationLink { CashView() } label: { row("banknote", "Contanti (portafoglio)", cash, Color(hex: "E67E22")) }
                 }
 
+                let months = salaryMonths(incomes)
+                Section {
+                    if months.isEmpty {
+                        Text("Nessuno stipendio registrato. Si aggiunge da solo ogni mese se l'hai impostato, oppure da Entrate e stipendio.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    SalaryRows(months: Array(months.prefix(6)), editing: $editingIncome)
+                    if months.count > 6 {
+                        NavigationLink { SalaryHistoryView() } label: { Text("Tutti gli stipendi (\(months.count))") }
+                    }
+                } header: {
+                    HStack {
+                        Text("Stipendi ricevuti")
+                        Spacer()
+                        if !months.isEmpty { Text("media \(eur(salaryAverage(months)))").textCase(nil) }
+                    }
+                }
+
                 Section("Spostamenti") {
                     Button { kind = "prelievo"; showMove = true } label: {
                         Label("Ho prelevato contanti dalla banca", systemImage: "arrow.down.to.line")
@@ -74,6 +93,7 @@ struct ContiView: View {
             }
             .navigationTitle("Conti")
             .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
+            .sheet(item: $editingIncome) { AddIncomeView(editing: $0) }
         }
     }
 }
