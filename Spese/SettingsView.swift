@@ -27,10 +27,12 @@ struct SettingsView: View {
                     NavigationLink { SalaryView() } label: { Label("Stipendio e risparmi", systemImage: "eurosign.circle") }
                     NavigationLink { CategoriesView() } label: { Label("Categorie e limiti", systemImage: "square.grid.2x2") }
                     NavigationLink { RecurringView() } label: { Label("Spese ricorrenti", systemImage: "repeat") }
+                    NavigationLink { SubscriptionsView() } label: { Label("Abbonamenti", systemImage: "play.rectangle.on.rectangle") }
                     NavigationLink { TripsView() } label: { Label("Viaggi", systemImage: "airplane") }
                     NavigationLink { TagsView() } label: { Label("Tag", systemImage: "tag") }
                     NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
+                    NavigationLink { ApplePayLogView() } label: { Label("Registro Apple Pay", systemImage: "list.bullet.clipboard") }
                 }
                 Section("Sicurezza e promemoria") {
                     LockToggle()
@@ -222,7 +224,7 @@ struct RecurringView: View {
                 HStack {
                     VStack(alignment: .leading) {
                         Text(r.name)
-                        Text("\(r.categoryName) · il giorno \(r.day) di ogni mese").font(.caption).foregroundStyle(.secondary)
+                        Text("\(r.categoryName) · il giorno \(r.day) di ogni mese\(r.isSubscription ? " · abbonamento" : "")").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Text(eur(r.amount)).bold()
@@ -243,6 +245,9 @@ struct RecurringEditor: View {
     @State private var amountText = ""
     @State private var catName = ""
     @State private var day = 1
+    /// Aperto da Abbonamenti: l'interruttore "È un abbonamento" parte acceso.
+    var asSubscription = false
+    @State private var isSub = false
 
     var body: some View {
         NavigationStack {
@@ -253,20 +258,28 @@ struct RecurringEditor: View {
                     ForEach(cats) { c in Label(c.name, systemImage: c.icon).tag(c.name) }
                 }
                 Stepper("Giorno del mese: \(day)", value: $day, in: 1...31)
+                Toggle("È un abbonamento", isOn: $isSub)
             }
-            .navigationTitle("Nuova ricorrente").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(asSubscription ? "Nuovo abbonamento" : "Nuova ricorrente").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") {
                         let n = name.trimmingCharacters(in: .whitespaces)
                         guard !n.isEmpty, let a = parseAmount(amountText), a > 0 else { return }
-                        ctx.insert(Recurring(name: n, amount: a, categoryName: catName, day: day, nextKey: monthKey(Date())))
+                        let r = Recurring(name: n, amount: a, categoryName: catName, day: day, nextKey: monthKey(Date()))
+                        r.isSubscription = isSub
+                        ctx.insert(r)
+                        try? ctx.save()
+                        if isSub { Task { await scheduleSubscriptionReminders(ctx) } }
                         dismiss()
                     }
                 }
             }
-            .onAppear { if catName.isEmpty { catName = cats.first?.name ?? "Altro" } }
+            .onAppear {
+                if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
+                isSub = asSubscription
+            }
         }
     }
 }

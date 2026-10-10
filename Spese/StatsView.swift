@@ -54,6 +54,7 @@ struct StatsView: View {
                 let total = current.reduce(0) { $0 + $1.myAmount }
                 let today = max(cal.component(.day, from: Date()), 1)
                 PeriodSummariesLinks()
+                ForecastSection()
                 Section("Questo mese") {
                     HStack(spacing: 0) {
                         statColumn("Media\ngiornaliera", eur(total / Double(today)))
@@ -64,6 +65,7 @@ struct StatsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                ComparisonSection()
                 Section("Andamento del mese") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 14) {
@@ -111,7 +113,11 @@ struct StatsView: View {
                     .chartForegroundStyleScale(["Entrate": Theme.accent, "Uscite": Color.red])
                     .frame(height: 200)
                 }
-                Section { NavigationLink { TagsView() } label: { Label("Totale per viaggio o tag", systemImage: "tag") } }
+                Section {
+                    NavigationLink { SpendingCalendarView() } label: { Label("Calendario delle spese", systemImage: "calendar") }
+                    NavigationLink { SubscriptionsView() } label: { Label("Abbonamenti", systemImage: "play.rectangle.on.rectangle") }
+                    NavigationLink { TagsView() } label: { Label("Totale per viaggio o tag", systemImage: "tag") }
+                }
             }
             .navigationTitle("Statistiche")
         }

@@ -97,6 +97,14 @@ jobs:
         run: |
           mkdir Payload
           cp -R build/Build/Products/Release-iphoneos/Spese.app Payload/
+          # Firma provvisoria solo per scrivere gli entitlements (gruppo condiviso con il widget):
+          # Sideloadly poi rifirma tutto con l'account dell'utente.
+          for X in Payload/Spese.app/PlugIns/*.appex; do
+            [ -d "$X" ] && codesign -f -s - --entitlements Config/SpeseWidget.entitlements "$X"
+          done
+          codesign -f -s - --entitlements Config/Spese.entitlements Payload/Spese.app
+          codesign -d --entitlements - Payload/Spese.app || true
+          ls Payload/Spese.app/PlugIns
           zip -r Spese.ipa Payload
 
       - uses: actions/upload-artifact@v4

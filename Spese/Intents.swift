@@ -35,21 +35,43 @@ struct AddExpenseIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let value = parseLooseAmount(amount), value > 0 else { throw InvalidAmountError(text: amount) }
-        let ctx = SharedStore.container.mainContext
-        let cats = (try? ctx.fetch(FetchDescriptor<CategoryItem>(sortBy: [SortDescriptor(\.order)]))) ?? []
+        // Prima di tutto si annota cosa è arrivato: se poi qualcosa va storto, il registro lo mostra.
+        let entry = ApplePayLog.begin(amount: amount, merchant: merchant)
         let name = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cat = guessCategory(merchant: name, available: cats.map { $0.name })
-        let e = Expense(amount: value, categoryName: cat, date: Date(), note: name)
-        e.method = method.rawValue
-        // In viaggio: la spesa va nel viaggio e, all'estero, viene convertita dalla valuta locale.
-        let trips = (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []
-        if let t = activeTrip(trips), t.isForeign, !looksLikeEuro(amount) { await Rates.refresh() }
-        applyActiveTrip(e, raw: amount, trips: trips) { code in Rates.cached[code] }
-        ctx.insert(e)
-        try ctx.save()
-        if UserDefaults.standard.bool(forKey: applePayNotifyKey) {
-            notify("Spesa registrata", "\(eur(e.amount)) · \(name.isEmpty ? cat : name)")
+        let value = parseLooseAmount(amount).flatMap { $0 > 0 ? $0 : nil }
+        if value == nil && name.isEmpty {
+            ApplePayLog.finish(entry, "Non registrata: importo ed esercente vuoti")
+            throw InvalidAmountError(text: amount)
+        }
+        do {
+            let ctx = SharedStore.container.mainContext
+            let cats = (try? ctx.fetch(FetchDescriptor<CategoryItem>(sortBy: [SortDescriptor(\.order)]))) ?? []
+            let cat = guessCategory(merchant: name, available: cats.map { $0.name })
+            let e = Expense(amount: value ?? 0, categoryName: cat, date: Date(), note: name)
+            e.method = method.rawValue
+            // Importo illeggibile: la spesa si salva lo stesso e resta "da completare" in Home.
+            e.needsAmount = value == nil
+            if value != nil {
+                // In viaggio: la spesa va nel viaggio e, all'estero, viene convertita dalla valuta locale.
+                let trips = (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []
+                if let t = activeTrip(trips), t.isForeign, !looksLikeEuro(amount) { await Rates.refresh() }
+                applyActiveTrip(e, raw: amount, trips: trips) { code in Rates.cached[code] }
+            }
+            ctx.insert(e)
+            try ctx.save()
+            updateWidgetSnapshot(ctx)
+            if e.needsAmount {
+                ApplePayLog.finish(entry, "Importo non leggibile: salvata da completare in \(cat)")
+            } else {
+                ApplePayLog.finish(entry, "Registrata: \(eur(e.amount)) in \(cat)")
+            }
+            if UserDefaults.standard.bool(forKey: applePayNotifyKey) || e.needsAmount {
+                notify(e.needsAmount ? "Spesa da completare" : "Spesa registrata",
+                       e.needsAmount ? "\(name): apri Spese e inserisci l'importo" : "\(eur(e.amount)) · \(name.isEmpty ? cat : name)")
+            }
+        } catch {
+            ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
+            throw error
         }
         return .result()
     }
@@ -77,6 +99,9 @@ struct SpeseShortcuts: AppShortcutsProvider {
         AppShortcut(intent: AddExpenseIntent(),
                     phrases: ["Aggiungi spesa in \(.applicationName)", "Registra una spesa in \(.applicationName)"],
                     shortTitle: "Aggiungi spesa", systemImageName: "creditcard")
+        AppShortcut(intent: QuickAddIntent(),
+                    phrases: ["Spesa veloce in \(.applicationName)", "Nuova spesa in \(.applicationName)"],
+                    shortTitle: "Spesa veloce", systemImageName: "plus.circle")
     }
 }
 
@@ -128,6 +153,7 @@ func guessCategory(merchant: String, available: [String], defaults: UserDefaults
     let words = m.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { String($0) }
     func hit(_ k: String) -> Bool { k.count <= 4 ? words.contains(k) : m.contains(k) }
     let rules: [(String, [String])] = [
+        (giftCardCategory, ["gift card", "giftcard", "gift", "buono regalo", "carta regalo", "card regalo"]),
         ("Alimentari", ["conad", "coop", "esselunga", "lidl", "carrefour", "eurospin", "penny", "despar", "aldi", "md", "pam",
                         "supermercato", "panificio", "macelleria", "ortofrutta"]),
         ("Pranzi/Cene fuori", ["bar", "caffè", "caffe", "ristorante", "pizzeria", "trattoria", "osteria", "mcdonald", "burger",

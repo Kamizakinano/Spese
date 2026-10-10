@@ -98,7 +98,7 @@ struct AddExpenseView: View {
 
     private func load() {
         if let e = editing {
-            amountText = String(e.amount); catName = e.categoryRaw; date = e.date; note = e.note; tag = e.tag
+            amountText = e.needsAmount ? "" : String(e.amount); catName = e.categoryRaw; date = e.date; note = e.note; tag = e.tag
             shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? String(e.owedAmount) : ""
             method = e.method
         } else {
@@ -130,6 +130,7 @@ struct AddExpenseView: View {
             if e.categoryRaw != catName { learnCategory(merchant: note, category: catName) }
             e.amount = a; e.categoryRaw = catName; e.date = date; e.note = note; e.tag = t
             e.owedAmount = owed; e.owedBy = by; e.method = method
+            e.needsAmount = false
             if owed == 0 { e.settled = false }
         } else {
             let e = Expense(amount: a, categoryName: catName, date: date, note: note)

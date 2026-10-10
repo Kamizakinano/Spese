@@ -375,6 +375,11 @@ struct CardLinkView: View {
             } footer: {
                 Text("Spento: la spesa viene registrata senza nessun avviso. La trovi nell'elenco quando apri l'app.")
             }
+            Section {
+                NavigationLink { ApplePayLogView() } label: { Label("Registro Apple Pay", systemImage: "list.bullet.clipboard") }
+            } footer: {
+                Text("Mostra cosa è arrivato da ogni pagamento e se è stato registrato. Utile se una spesa non entra.")
+            }
             Section("Cosa funziona e cosa no") {
                 Text("Funzionano i pagamenti con Apple Pay con la carta scelta. Non vengono registrati i pagamenti con la carta fisica, online con il numero della carta, i bonifici e gli addebiti diretti: quelli vanno inseriti a mano.")
                     .font(.footnote).foregroundStyle(.secondary)

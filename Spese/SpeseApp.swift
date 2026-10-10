@@ -45,6 +45,7 @@ struct SpeseApp: App {
     var rate: Double = 0             // cambio usato: 1 € = rate nella valuta locale
     var paidBy: String = ""          // chi ha pagato ("" = io)
     var splitJSON: String = ""       // divisione: {"Io": 10, "Marco": 10} in euro
+    var needsAmount: Bool = false    // arrivata da Apple Pay senza un importo leggibile: da completare
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }
@@ -73,6 +74,7 @@ struct SpeseApp: App {
     var categoryName: String
     var day: Int
     var nextKey: String       // prossimo mese da generare, es. "2026-10"
+    var isSubscription: Bool = false   // abbonamento: compare in Abbonamenti, con avviso prima del rinnovo
     init(name: String, amount: Double, categoryName: String, day: Int, nextKey: String) {
         self.name = name; self.amount = amount; self.categoryName = categoryName
         self.day = day; self.nextKey = nextKey
@@ -101,8 +103,14 @@ let defaultCategories: [(String, String, String)] = [
     ("Viaggi", "airplane", "2980B9"), ("Trasporti", "car", "8E44AD"),
     ("Casa e bollette", "house", "16A085"), ("Salute", "cross.case", "C0392B"),
     ("Svago", "popcorn", "D4A017"), ("Shopping", "bag", "E84393"),
+    (giftCardCategory, "giftcard", "6C5CE7"),
     ("Altro", "ellipsis.circle", "7F8C8D")
 ]
+
+/// Categoria per l'acquisto di carte regalo (di qualsiasi negozio).
+let giftCardCategory = "Gift Card"
+/// Segna che la categoria Gift Card è già stata aggiunta (se poi la si elimina non ricompare).
+let giftCardAddedKey = "giftCardAdded"
 
 func monthKey(_ d: Date) -> String {
     let c = Calendar.current.dateComponents([.year, .month], from: d)
