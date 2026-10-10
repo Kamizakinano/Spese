@@ -33,7 +33,6 @@ struct SettingsView: View {
                     NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
                     NavigationLink { DebtsView() } label: { Label("Devo dare", systemImage: "person.crop.circle.badge.minus") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
-                    NavigationLink { ApplePayLogView() } label: { Label("Registro pagamenti", systemImage: "list.bullet.clipboard") }
                 }
                 Section("Sicurezza e promemoria") {
                     LockToggle()

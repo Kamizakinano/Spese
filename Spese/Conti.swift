@@ -89,6 +89,7 @@ struct ContiView: View {
                 Section {
                     NavigationLink { IncomesView() } label: { Label("Entrate e stipendio", systemImage: "arrow.down.circle") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
+                    NavigationLink { ApplePayLogView() } label: { Label("Registro pagamenti", systemImage: "list.bullet.clipboard") }
                 }
             }
             .navigationTitle("Conti")
@@ -405,13 +406,8 @@ struct CardLinkView: View {
                 step(5, "Tocca Testo e scegli Input comando rapido, poi tocca la variabile e scegli Contenuto (o Corpo). Tocca la freccia, poi Oggetto e scegli allo stesso modo Oggetto.")
                 step(6, "Tocca Fine. Le email che non parlano di soldi vengono ignorate.")
             }
-            Section {
-                NavigationLink { ApplePayLogView() } label: { Label("Registro pagamenti", systemImage: "list.bullet.clipboard") }
-            } footer: {
-                Text("Mostra cosa è arrivato da ogni pagamento e se è stato registrato. Utile se una spesa non entra.")
-            }
             Section("Cosa funziona e cosa no") {
-                Text("Funzionano i pagamenti con Apple Pay con la carta scelta. Non vengono registrati i pagamenti con la carta fisica, online con il numero della carta, i bonifici e gli addebiti diretti: quelli vanno inseriti a mano.")
+                Text("Funzionano i pagamenti con Apple Pay con la carta scelta. Non vengono registrati i pagamenti con la carta fisica, online con il numero della carta, i bonifici e gli addebiti diretti: per quelli usa le email della banca (sopra) o inseriscili a mano. Com'è andato ogni pagamento lo vedi in Conti → Registro pagamenti.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("La categoria viene scelta dal nome dell'esercente (per esempio Conad diventa Alimentari). Se non è riconosciuto va in Altro e puoi cambiarla toccando la spesa.")
                     .font(.footnote).foregroundStyle(.secondary)
