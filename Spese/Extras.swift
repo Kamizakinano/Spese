@@ -263,6 +263,13 @@ func settleOwed(_ e: Expense, cash: Bool, ctx: ModelContext, now: Date = Date())
     let note = "Rimborso \(e.owedBy)".trimmingCharacters(in: .whitespaces)
     if cash {
         ctx.insert(CashMove(amount: e.owedAmount, date: now, note: note, kind: "ricevuti", bank: false))
+    } else if let bonifico = ((try? ctx.fetch(FetchDescriptor<Income>())) ?? []).first(where: {
+        $0.kind == "Altra entrata" && $0.note.hasPrefix("Bonifico") && abs($0.amount - e.owedAmount) < 0.005
+            && abs($0.date.timeIntervalSince(now)) < 7 * 86400
+    }) {
+        // Il bonifico è già entrato dall'email della banca: diventa il rimborso, senza contarlo due volte.
+        bonifico.kind = "Rimborso"
+        bonifico.note = note
     } else {
         ctx.insert(Income(amount: e.owedAmount, saved: 0, kind: "Rimborso", date: now, note: note))
     }
