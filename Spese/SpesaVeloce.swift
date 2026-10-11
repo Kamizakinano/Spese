@@ -30,6 +30,7 @@ struct QuickAddView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @Query private var all: [Expense]
     @AppStorage("lastMethod") private var lastMethod = "carta"
     @State private var amountText = ""
     @State private var catName = ""
@@ -75,6 +76,10 @@ struct QuickAddView: View {
 
                     TextField("Nota (facoltativa)", text: $note)
                         .padding(12).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                    NoteSuggestionsRow(typed: note, expenses: all) { s in
+                        note = s.note
+                        if cats.contains(where: { $0.name == s.category }) { catName = s.category }
+                    }
 
                     Button(action: save) {
                         Text("Salva").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
