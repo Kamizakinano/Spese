@@ -33,6 +33,13 @@ struct AddExpenseView: View {
     @FocusState private var focus: Bool
 
     private var knownTags: [String] { Array(Set(all.map(\.tag).filter { !$0.isEmpty })).sorted() }
+    @Query private var debts: [Debt]
+    /// Persone già usate in "Ti devono" e "Devo dare", le più frequenti per prime.
+    private var knownPeople: [String] {
+        let names = all.map { $0.owedBy.trimmingCharacters(in: .whitespaces) } + debts.map(\.person)
+        let counts = Dictionary(grouping: names.filter { !$0.isEmpty }, by: { $0 }).mapValues(\.count)
+        return counts.keys.sorted { counts[$0, default: 0] != counts[$1, default: 0] ? counts[$0, default: 0] > counts[$1, default: 0] : $0 < $1 }
+    }
 
     var body: some View {
         NavigationStack {
@@ -63,11 +70,35 @@ struct AddExpenseView: View {
                         }
                     }
                 }
-                Section("Spesa condivisa") {
+                Section {
                     Toggle("Ho pagato anche per altri", isOn: $shared)
                     if shared {
                         TextField("Chi ti deve i soldi", text: $owedBy)
+                        if !knownPeople.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack {
+                                    ForEach(knownPeople, id: \.self) { p in
+                                        Button(p) { owedBy = p }
+                                            .buttonStyle(.bordered)
+                                            .tint(owedBy == p ? Theme.accent : .gray)
+                                    }
+                                }
+                            }
+                        }
                         TextField("Quanto ti deve (€)", text: $owedText).keyboardType(.decimalPad)
+                        if let a = parseAmount(amountText), a > 0 {
+                            HStack {
+                                Button("Metà (\(eur(a / 2)))") { owedText = amountString((a / 2 * 100).rounded() / 100) }
+                                Button("Tutto") { owedText = amountString(a) }
+                            }
+                            .buttonStyle(.bordered).font(.footnote)
+                        }
+                    }
+                } header: {
+                    Text("Spesa condivisa")
+                } footer: {
+                    if shared {
+                        Text("La spesa va nei movimenti e in Ti devono. Quando la persona ti restituisce i soldi, tocca Incassato in Ti devono: nel movimento comparirà la conferma.")
                     }
                 }
                 if editing == nil {
@@ -236,8 +267,9 @@ struct OwedView: View {
                     }
                 }
             }
-            if !closed.isEmpty {
-                Section("Già restituiti") { ForEach(closed) { row($0, done: true).foregroundStyle(.secondary) } }
+            Section("Già restituiti") {
+                if closed.isEmpty { Text("Ancora nessun rimborso incassato").foregroundStyle(.secondary) }
+                ForEach(closed) { row($0, done: true).foregroundStyle(.secondary) }
             }
             Section { Text("Tocca Incassato quando ricevi i soldi e scegli se sono arrivati sul conto o in contanti: tornano nel disponibile come rimborso.")
                 .font(.footnote).foregroundStyle(.secondary) }

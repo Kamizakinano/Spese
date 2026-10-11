@@ -397,6 +397,7 @@ struct HomeView: View {
                                 Text(e.note.isEmpty ? e.categoryRaw : e.note).lineLimit(1)
                                 Text(rowDetail(e))
                                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                if e.owedAmount > 0 && e.tripID.isEmpty { OwedBadge(expense: e) }
                             }
                             Spacer()
                             Text(e.needsAmount ? "Da completare" : eur(e.amount))
@@ -584,6 +585,23 @@ struct HomeView: View {
     }
 }
 
+
+/// Sotto un movimento pagato anche per altri: chi deve quanto, e la conferma quando è restituito.
+struct OwedBadge: View {
+    let expense: Expense
+
+    var body: some View {
+        let who = expense.owedBy.isEmpty ? "Qualcuno" : expense.owedBy
+        if expense.settled {
+            let how = expense.settledMethod == "contanti" ? " in contanti" : expense.settledMethod == "carta" ? " sul conto" : ""
+            Label("\(who) ha restituito \(eur(expense.owedAmount))\(how)", systemImage: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(Theme.accent).lineLimit(1)
+        } else {
+            Label("\(who) ti deve \(eur(expense.owedAmount))", systemImage: "person.crop.circle.badge.clock")
+                .font(.caption.weight(.semibold)).foregroundStyle(.orange).lineLimit(1)
+        }
+    }
+}
 
 /// Colori del riquadro in cima alla Home.
 enum HeroStyle {
