@@ -406,7 +406,7 @@ struct HomeView: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { editing = e }
-                    }.onDelete { idx in idx.map { shown[$0] }.forEach(ctx.delete) }
+                    }.onDelete { idx in idx.map { shown[$0] }.forEach { deleteExpense($0, ctx: ctx) } }
                 }
             }
             .navigationTitle("Le mie spese").navigationBarTitleDisplayMode(.inline)
