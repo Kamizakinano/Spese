@@ -106,6 +106,9 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
         let kind = e.salary ? "Stipendio" : "Altra entrata"
         let dup = incomes.contains { $0.kind == kind && abs($0.amount - e.amount) < 0.005 && cal.isDate($0.date, inSameDayAs: when) }
         if dup { return "Entrata già registrata oggi: ignorata" }
+        // Già segnato come "Incassato" in Ti devono (sul conto): è quel rimborso, non un'entrata in più.
+        let refund = incomes.contains { $0.kind == "Rimborso" && abs($0.amount - e.amount) < 0.005 && abs($0.date.timeIntervalSince(when)) < 7 * 86400 }
+        if refund { return "Rimborso già segnato come incassato: ignorata" }
         let note = e.salary ? "Stipendio" : (e.merchant.isEmpty ? "Bonifico ricevuto" : "Bonifico da \(e.merchant)")
         ctx.insert(Income(amount: e.amount, saved: 0, kind: kind, date: when, note: note))
         try ctx.save()
