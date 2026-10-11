@@ -30,6 +30,8 @@ struct AddExpenseView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var showScanner = false
     @State private var scanMessage = ""
+    @State private var error = ""
+    @State private var askRefund: Double?   // nuova cifra restituita da confermare
     @FocusState private var focus: Bool
 
     private var knownTags: [String] { Array(Set(all.map(\.tag).filter { !$0.isEmpty })).sorted() }
@@ -97,6 +99,7 @@ struct AddExpenseView: View {
                 } header: {
                     Text("Spesa condivisa")
                 } footer: {
+                    if !error.isEmpty { Text(error).foregroundStyle(.red) }
                     if shared {
                         Text("La spesa va nei movimenti e in Ti devono. Quando la persona ti restituisce i soldi, tocca Incassato in Ti devono: nel movimento comparirà la conferma.")
                     }
@@ -117,6 +120,16 @@ struct AddExpenseView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Salva") { save() } }
             }
+            .confirmationDialog(refundQuestion, isPresented: Binding(get: { askRefund != nil }, set: { if !$0 { askRefund = nil } }),
+                                titleVisibility: .visible) {
+                if let new = askRefund, let e = editing {
+                    Button(new > 0 ? "Sì, cambia anche l'incasso in \(eur(new))" : "Sì, annulla anche l'incasso") {
+                        askRefund = nil; save(refund: true)
+                    }
+                    Button("No, lascia \(eur(e.owedAmount)) restituiti") { askRefund = nil; save(refund: false) }
+                }
+                Button("Annulla", role: .cancel) { askRefund = nil }
+            }
             .onAppear(perform: load)
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
@@ -131,10 +144,16 @@ struct AddExpenseView: View {
         .presentationDetents([.large])
     }
 
+    private var refundQuestion: String {
+        guard let e = editing else { return "" }
+        let who = e.owedBy.isEmpty ? "Qualcuno" : e.owedBy
+        return "\(who) ti ha già restituito \(eur(e.owedAmount)). Vuoi cambiare anche la cifra restituita?"
+    }
+
     private func load() {
         if let e = editing {
-            amountText = e.needsAmount ? "" : String(e.amount); catName = e.categoryRaw; date = e.date; note = e.note; tag = e.tag
-            shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? String(e.owedAmount) : ""
+            amountText = e.needsAmount ? "" : amountString(e.amount); catName = e.categoryRaw; date = e.date; note = e.note; tag = e.tag
+            shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? amountString(e.owedAmount) : ""
             method = e.method
         } else {
             date = defaultDate
@@ -155,16 +174,28 @@ struct AddExpenseView: View {
         }
     }
 
-    private func save() {
-        guard let a = parseAmount(amountText), a > 0 else { return }
+    private func save() { save(refund: nil) }
+
+    /// `refund`: per una spesa già restituita, la scelta dell'utente sulla cifra restituita
+    /// (true = cambiala anche nell'incasso, false = lasciala com'è, nil = non ancora chiesto).
+    private func save(refund: Bool?) {
+        guard let a = parseAmount(amountText), a > 0 else { error = "Inserisci l'importo."; return }
         let t = tag.trimmingCharacters(in: .whitespaces)
-        let owed = shared ? min(parseAmount(owedText) ?? 0, a) : 0
+        var owed = shared ? (parseAmount(owedText) ?? 0) : 0
+        guard owed <= a + 0.005 else { error = "Quanto ti devono non può superare l'importo della spesa."; return }
         let by = shared ? owedBy.trimmingCharacters(in: .whitespaces) : ""
         if let e = editing {
+            if e.settled && abs(owed - e.owedAmount) > 0.005 {
+                switch refund {
+                case nil: askRefund = owed; return          // prima si chiede
+                case true?: changeRefund(e, to: owed, ctx: ctx)
+                case false?: owed = e.owedAmount            // la cifra restituita resta quella
+                }
+            }
             // Se la categoria viene corretta, l'app la ricorda per questo esercente.
             if e.categoryRaw != catName { learnCategory(merchant: note, category: catName) }
             e.amount = a; e.categoryRaw = catName; e.date = date; e.note = note; e.tag = t
-            e.owedAmount = owed; e.owedBy = by; e.method = method
+            e.owedAmount = owed; e.owedBy = owed > 0 ? (by.isEmpty ? e.owedBy : by) : by; e.method = method
             e.needsAmount = false
             if owed == 0 { e.settled = false }
         } else {
@@ -292,9 +323,13 @@ struct OwedView: View {
 func settleOwed(_ e: Expense, cash: Bool, ctx: ModelContext, now: Date = Date()) {
     e.settled = true
     e.settledMethod = cash ? "contanti" : "carta"
+    let key = UUID().uuidString
+    e.refundKey = key
     let note = "Rimborso \(e.owedBy)".trimmingCharacters(in: .whitespaces)
     if cash {
-        ctx.insert(CashMove(amount: e.owedAmount, date: now, note: note, kind: "ricevuti", bank: false))
+        let m = CashMove(amount: e.owedAmount, date: now, note: note, kind: "ricevuti", bank: false)
+        m.refundKey = key
+        ctx.insert(m)
     } else if let bonifico = ((try? ctx.fetch(FetchDescriptor<Income>())) ?? []).first(where: {
         $0.kind == "Altra entrata" && $0.note.hasPrefix("Bonifico") && abs($0.amount - e.owedAmount) < 0.005
             && abs($0.date.timeIntervalSince(now)) < 7 * 86400
@@ -302,9 +337,54 @@ func settleOwed(_ e: Expense, cash: Bool, ctx: ModelContext, now: Date = Date())
         // Il bonifico è già entrato dall'email della banca: diventa il rimborso, senza contarlo due volte.
         bonifico.kind = "Rimborso"
         bonifico.note = note
+        bonifico.refundKey = key
     } else {
-        ctx.insert(Income(amount: e.owedAmount, saved: 0, kind: "Rimborso", date: now, note: note))
+        let i = Income(amount: e.owedAmount, saved: 0, kind: "Rimborso", date: now, note: note)
+        i.refundKey = key
+        ctx.insert(i)
     }
+    try? ctx.save()
+}
+
+/// Entrate e contanti del rimborso già incassato per questa spesa. Per i rimborsi segnati
+/// prima della versione 2.20 (senza chiave) si cerca quello con stesso nome e importo.
+func linkedRefunds(of e: Expense, ctx: ModelContext) -> (incomes: [Income], cash: [CashMove]) {
+    guard e.settled else { return ([], []) }
+    let incomes = (try? ctx.fetch(FetchDescriptor<Income>())) ?? []
+    let cash = (try? ctx.fetch(FetchDescriptor<CashMove>())) ?? []
+    if !e.refundKey.isEmpty {
+        return (incomes.filter { $0.refundKey == e.refundKey }, cash.filter { $0.refundKey == e.refundKey })
+    }
+    let note = "Rimborso \(e.owedBy)".trimmingCharacters(in: .whitespaces)
+    func same(_ a: Double) -> Bool { abs(a - e.owedAmount) < 0.005 }
+    if e.settledMethod == "contanti" {
+        return ([], Array(cash.filter { $0.refundKey.isEmpty && $0.kind == "ricevuti" && $0.note == note && same($0.amount) }.prefix(1)))
+    }
+    return (Array(incomes.filter { $0.refundKey.isEmpty && $0.kind == "Rimborso" && $0.note == note && same($0.amount) }.prefix(1)), [])
+}
+
+/// Cancella una spesa e, se era già stata restituita, anche il rimborso incassato:
+/// altrimenti quei soldi resterebbero nel conto come se fossero arrivati da soli.
+func deleteExpense(_ e: Expense, ctx: ModelContext) {
+    let r = linkedRefunds(of: e, ctx: ctx)
+    r.incomes.forEach(ctx.delete)
+    r.cash.forEach(ctx.delete)
+    ctx.delete(e)
+    try? ctx.save()
+}
+
+/// Cambia la cifra già restituita di una spesa (anche nel rimborso incassato). 0 = annulla l'incasso.
+func changeRefund(_ e: Expense, to owed: Double, ctx: ModelContext) {
+    let r = linkedRefunds(of: e, ctx: ctx)
+    if owed <= 0 {
+        r.incomes.forEach(ctx.delete)
+        r.cash.forEach(ctx.delete)
+        e.settled = false; e.settledMethod = ""; e.refundKey = ""
+    } else {
+        r.incomes.forEach { $0.amount = owed }
+        r.cash.forEach { $0.amount = owed }
+    }
+    e.owedAmount = max(owed, 0)
     try? ctx.save()
 }
 
@@ -369,11 +449,12 @@ struct Backup: Codable {
         var tag: String; var owedBy: String; var owedAmount: Double; var settled: Bool; var method: String? = nil
         var tripID: String? = nil; var originalAmount: Double? = nil; var originalCurrency: String? = nil
         var rate: Double? = nil; var paidBy: String? = nil; var splitJSON: String? = nil
-        var needsAmount: Bool? = nil; var settledMethod: String? = nil }
+        var needsAmount: Bool? = nil; var settledMethod: String? = nil; var refundKey: String? = nil }
     struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
         var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
     struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
-    struct I: Codable { var amount: Double; var saved: Double; var kind: String; var date: Date; var note: String }
+    struct I: Codable { var amount: Double; var saved: Double; var kind: String; var date: Date; var note: String
+        var refundKey: String? = nil }
     struct M: Codable { var amount: Double; var date: Date; var note: String }
     struct C: Codable { var name: String; var icon: String; var colorHex: String; var order: Int; var limit: Double }
     struct R: Codable { var name: String; var amount: Double; var categoryName: String; var day: Int; var nextKey: String
@@ -381,7 +462,8 @@ struct Backup: Codable {
     struct D: Codable { var person: String; var amount: Double; var note: String; var category: String; var date: Date
         var paid: Bool; var paidMethod: String; var paidDate: Date? }
     struct G: Codable { var name: String; var target: Double; var saved: Double; var deadline: Date }
-    struct CM: Codable { var amount: Double; var date: Date; var note: String; var kind: String; var bank: Bool }
+    struct CM: Codable { var amount: Double; var date: Date; var note: String; var kind: String; var bank: Bool
+        var refundKey: String? = nil }
     struct A: Codable { var startDate: Date; var salaryAmount: Double; var salaryDay: Int
         var salaryMode: Int; var salaryValue: Double; var salaryNextKey: String
         var periodStart: Date? = nil; var periodEnd: Date? = nil }
@@ -406,10 +488,10 @@ func backupData(_ ctx: ModelContext) -> Data? {
                                    tag: x.tag, owedBy: x.owedBy, owedAmount: x.owedAmount, settled: x.settled, method: x.method,
                                    tripID: x.tripID, originalAmount: x.originalAmount, originalCurrency: x.originalCurrency,
                                    rate: x.rate, paidBy: x.paidBy, splitJSON: x.splitJSON,
-                                   needsAmount: x.needsAmount, settledMethod: x.settledMethod))
+                                   needsAmount: x.needsAmount, settledMethod: x.settledMethod, refundKey: x.refundKey))
     }
     for x in all(Income.self) {
-        b.incomes.append(Backup.I(amount: x.amount, saved: x.saved, kind: x.kind, date: x.date, note: x.note))
+        b.incomes.append(Backup.I(amount: x.amount, saved: x.saved, kind: x.kind, date: x.date, note: x.note, refundKey: x.refundKey))
     }
     for x in all(SavingsMove.self) {
         b.moves.append(Backup.M(amount: x.amount, date: x.date, note: x.note))
@@ -429,7 +511,7 @@ func backupData(_ ctx: ModelContext) -> Data? {
                              salaryMode: x.salaryMode, salaryValue: x.salaryValue, salaryNextKey: x.salaryNextKey,
                              periodStart: x.periodStart, periodEnd: x.periodEnd)
     }
-    b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank) }
+    b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank, refundKey: $0.refundKey) }
     b.cashStart = all(Account.self).first?.cashStart
     b.trips = all(Trip.self).map { Backup.T(uid: $0.uid, name: $0.name, currency: $0.currency, startDate: $0.startDate, endDate: $0.endDate,
                                             budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate) }
@@ -519,10 +601,13 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         x.tag = e.tag; x.owedBy = e.owedBy; x.owedAmount = e.owedAmount; x.settled = e.settled; x.method = e.method ?? "carta"
         x.tripID = e.tripID ?? ""; x.originalAmount = e.originalAmount ?? 0; x.originalCurrency = e.originalCurrency ?? ""
         x.rate = e.rate ?? 0; x.paidBy = e.paidBy ?? ""; x.splitJSON = e.splitJSON ?? ""
-        x.needsAmount = e.needsAmount ?? false; x.settledMethod = e.settledMethod ?? ""
+        x.needsAmount = e.needsAmount ?? false; x.settledMethod = e.settledMethod ?? ""; x.refundKey = e.refundKey ?? ""
         ctx.insert(x)
     }
-    for i in b.incomes { ctx.insert(Income(amount: i.amount, saved: i.saved, kind: i.kind, date: i.date, note: i.note)) }
+    for i in b.incomes {
+        let x = Income(amount: i.amount, saved: i.saved, kind: i.kind, date: i.date, note: i.note); x.refundKey = i.refundKey ?? ""
+        ctx.insert(x)
+    }
     for m in b.moves { ctx.insert(SavingsMove(amount: m.amount, date: m.date, note: m.note)) }
     for c in b.categories {
         let x = CategoryItem(name: c.name, icon: c.icon, colorHex: c.colorHex, order: c.order); x.limit = c.limit; ctx.insert(x)
@@ -537,7 +622,10 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         x.paid = d.paid; x.paidMethod = d.paidMethod; x.paidDate = d.paidDate
         ctx.insert(x)
     }
-    for c in b.cashMoves ?? [] { ctx.insert(CashMove(amount: c.amount, date: c.date, note: c.note, kind: c.kind, bank: c.bank)) }
+    for c in b.cashMoves ?? [] {
+        let x = CashMove(amount: c.amount, date: c.date, note: c.note, kind: c.kind, bank: c.bank); x.refundKey = c.refundKey ?? ""
+        ctx.insert(x)
+    }
     for t in b.trips ?? [] {
         let x = Trip(name: t.name, currency: t.currency, startDate: t.startDate, endDate: t.endDate)
         x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate

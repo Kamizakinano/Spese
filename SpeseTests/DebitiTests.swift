@@ -69,3 +69,45 @@ final class DebitiTests: XCTestCase {
         XCTAssertEqual(e.first?.note, "Restituiti a \(who) · pizza")
     }
 }
+
+/// L'esempio di Valentina: spesa da 1000 € per lei, incassata, poi cancellata.
+final class RimborsiCollegatiTests: XCTestCase {
+    @MainActor
+    func testCancellareLaSpesaToglieAncheIlRimborso() throws {
+        let ctx = SharedStore.container.mainContext
+        let who = "Valentina \(UUID().uuidString.prefix(6))"
+        let e = Expense(amount: 1000, categoryName: "Altro", date: Date(), note: "Prova")
+        e.owedBy = who; e.owedAmount = 1000
+        ctx.insert(e)
+        defer {
+            for i in (try? ctx.fetch(FetchDescriptor<Income>())) ?? [] where i.note.contains(who) { ctx.delete(i) }
+            try? ctx.save()
+        }
+        settleOwed(e, cash: false, ctx: ctx)
+        XCTAssertEqual(try ctx.fetch(FetchDescriptor<Income>()).filter { $0.note.contains(who) }.count, 1)
+        deleteExpense(e, ctx: ctx)
+        XCTAssertTrue(try ctx.fetch(FetchDescriptor<Income>()).filter { $0.note.contains(who) }.isEmpty,
+                      "Cancellando la spesa sparisce anche il rimborso: il conto torna com'era")
+    }
+
+    @MainActor
+    func testCambiareLaCifraRestituita() throws {
+        let ctx = SharedStore.container.mainContext
+        let who = "Prova \(UUID().uuidString.prefix(6))"
+        let e = Expense(amount: 80, categoryName: "Altro", date: Date(), note: "")
+        e.owedBy = who; e.owedAmount = 40
+        ctx.insert(e)
+        defer {
+            ctx.delete(e)
+            for c in (try? ctx.fetch(FetchDescriptor<CashMove>())) ?? [] where c.note.contains(who) { ctx.delete(c) }
+            try? ctx.save()
+        }
+        settleOwed(e, cash: true, ctx: ctx)
+        changeRefund(e, to: 30, ctx: ctx)
+        XCTAssertEqual(e.owedAmount, 30)
+        XCTAssertEqual(try ctx.fetch(FetchDescriptor<CashMove>()).first { $0.note.contains(who) }?.amount, 30)
+        changeRefund(e, to: 0, ctx: ctx)
+        XCTAssertFalse(e.settled, "Cifra a zero: incasso annullato")
+        XCTAssertNil(try ctx.fetch(FetchDescriptor<CashMove>()).first { $0.note.contains(who) })
+    }
+}

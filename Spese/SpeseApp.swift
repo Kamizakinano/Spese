@@ -48,6 +48,7 @@ struct SpeseApp: App {
     var splitJSON: String = ""       // divisione: {"Io": 10, "Marco": 10} in euro
     var needsAmount: Bool = false    // arrivata da Apple Pay senza un importo leggibile: da completare
     var settledMethod: String = ""   // "Ti devono": incassato "carta" (sul conto) o "contanti"
+    var refundKey: String = ""       // lega la spesa all'entrata (o ai contanti) del rimborso incassato
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }
@@ -209,6 +210,7 @@ func notify(_ title: String, _ body: String) {
     var kind: String
     var date: Date
     var note: String
+    var refundKey: String = ""   // rimborso di una spesa "Ti devono" (stessa chiave della spesa)
     init(amount: Double, saved: Double, kind: String, date: Date, note: String) {
         self.amount = amount; self.saved = saved; self.kind = kind; self.date = date; self.note = note
     }
@@ -237,6 +239,7 @@ func notify(_ title: String, _ body: String) {
     var note: String
     var kind: String           // prelievo, versamento, ricevuti, correzione
     var bank: Bool             // true se i soldi si spostano tra banca e contanti
+    var refundKey: String = "" // rimborso in contanti di una spesa "Ti devono"
     init(amount: Double, date: Date, note: String, kind: String, bank: Bool) {
         self.amount = amount; self.date = date; self.note = note; self.kind = kind; self.bank = bank
     }

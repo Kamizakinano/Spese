@@ -279,7 +279,7 @@ struct CashView: View {
                         Spacer()
                         Text("-" + eur(e.amount)).bold()
                     }
-                }.onDelete { idx in idx.map { cashExpenses[$0] }.forEach(ctx.delete) }
+                }.onDelete { idx in idx.map { cashExpenses[$0] }.forEach { deleteExpense($0, ctx: ctx) } }
             }
         }
         .navigationTitle("Contanti")
