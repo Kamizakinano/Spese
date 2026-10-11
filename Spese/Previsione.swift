@@ -12,18 +12,37 @@ struct Forecast {
     let spent: Double        // speso dall'ultimo stipendio
     let elapsedDays: Int     // giorni passati dallo stipendio, oggi compreso
     let daysLeft: Int        // giorni da oggi al prossimo stipendio, oggi compreso
+    var upcoming: Double = 0 // spese ricorrenti che arrivano prima dello stipendio
     var avgPerDay: Double { spent / Double(max(elapsedDays, 1)) }
-    var budgetPerDay: Double { max(available, 0) / Double(max(daysLeft, 1)) }
+    var budgetPerDay: Double { max(available - upcoming, 0) / Double(max(daysLeft, 1)) }
     /// Soldi che restano il giorno prima dello stipendio se la media resta questa.
-    var projected: Double { available - avgPerDay * Double(max(daysLeft, 0)) }
+    var projected: Double { available - upcoming - avgPerDay * Double(max(daysLeft, 0)) }
     var lastDay: Date { Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end }
 }
 
-func makeForecast(available: Double, spent: Double, period: (start: Date, end: Date), now: Date = Date()) -> Forecast {
+func makeForecast(available: Double, spent: Double, period: (start: Date, end: Date), upcoming: Double = 0,
+                  now: Date = Date()) -> Forecast {
     let cal = Calendar.current
     let elapsed = (cal.dateComponents([.day], from: cal.startOfDay(for: period.start), to: cal.startOfDay(for: now)).day ?? 0) + 1
     return Forecast(start: period.start, end: period.end, available: available, spent: spent,
-                    elapsedDays: max(elapsed, 1), daysLeft: max(daysLeft(until: period.end, from: now), 0))
+                    elapsedDays: max(elapsed, 1), daysLeft: max(daysLeft(until: period.end, from: now), 0), upcoming: upcoming)
+}
+
+/// Quanto di una spesa conta per la media giornaliera della previsione: senza la parte che
+/// altri ti restituiranno ("Ti devono") e senza le spese ricorrenti (affitto, abbonamenti…),
+/// che non si ripetono ogni giorno e vengono calcolate a parte.
+func everydaySpend(_ e: Expense, recurring: [Recurring]) -> Double {
+    if recurring.contains(where: { $0.name == e.note && abs($0.amount - e.amount) < 0.005 }) { return 0 }
+    let others = e.tripID.isEmpty ? e.owedAmount : 0
+    return max(e.myAmount - others, 0)
+}
+
+/// Spese ricorrenti che arriveranno da domani fino al giorno prima di `end`.
+func upcomingRecurring(_ recurring: [Recurring], before end: Date, now: Date = Date()) -> Double {
+    recurring.reduce(0) { sum, r in
+        guard let d = nextRenewal(nextKey: r.nextKey, day: r.day), d > now, d < end else { return sum }
+        return sum + r.amount
+    }
 }
 
 /// Una categoria confrontata con lo stesso numero di giorni del periodo precedente.
@@ -76,9 +95,11 @@ private struct PeriodData {
     let available: Double
     let period: (start: Date, end: Date)?
     let previousStart: Date?
+    var recurring: [Recurring] = []
 
     init(all raw: [Expense], trips: [Trip], incomes: [Income], moves: [SavingsMove], cash: [CashMove],
-         account: Account?, payments: [TripPayment]) {
+         account: Account?, payments: [TripPayment], recurring: [Recurring] = []) {
+        self.recurring = recurring
         let l = Ledger(incomes: incomes, expenses: raw, moves: moves, cash: cash, account: account, payments: payments)
         all = statExpenses(raw, trips: trips)
         available = l.figures(for: Date()).left + l.cashBalance()
@@ -90,8 +111,9 @@ private struct PeriodData {
         }
     }
 
+    /// Spese di tutti i giorni (vedi `everydaySpend`) tra `a` e `b`.
     func spent(from a: Date, to b: Date) -> Double {
-        all.filter { $0.date >= a && $0.date < b }.reduce(0) { $0 + $1.myAmount }
+        all.filter { $0.date >= a && $0.date < b }.reduce(0) { $0 + everydaySpend($1, recurring: recurring) }
     }
 }
 
@@ -105,14 +127,16 @@ struct ForecastSection: View {
     @Query private var cash: [CashMove]
     @Query private var accounts: [Account]
     @Query private var payments: [TripPayment]
+    @Query private var recurring: [Recurring]
 
     private struct Point: Identifiable { let date: Date; let value: Double; let forecast: Bool; var id: String { "\(date)\(forecast)" } }
 
     var body: some View {
         let d = PeriodData(all: raw, trips: trips, incomes: incomes, moves: moves, cash: cash,
-                           account: accounts.first, payments: payments)
+                           account: accounts.first, payments: payments, recurring: recurring)
         if let p = d.period {
-            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p)
+            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p,
+                                 upcoming: upcomingRecurring(recurring, before: p.end))
             Section("Previsione") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")
@@ -121,6 +145,10 @@ struct ForecastSection: View {
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Spendi in media \(eur(f.avgPerDay)) al giorno, il budget è \(eur(f.budgetPerDay))")
                         .font(.footnote).opacity(0.85)
+                    Text(f.upcoming > 0
+                         ? "Senza la parte che ti restituiscono gli altri. Ricorrenti in arrivo: \(eur(f.upcoming))."
+                         : "Senza la parte che ti restituiscono gli altri e senza le spese ricorrenti.")
+                        .font(.caption).opacity(0.75)
                 }
                 .foregroundStyle(.white).padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(LinearGradient(colors: f.projected >= 0 ? [HeroStyle.top, HeroStyle.bottom] : [Color.red, Color.orange],
