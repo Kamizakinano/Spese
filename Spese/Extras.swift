@@ -44,6 +44,10 @@ struct AddExpenseView: View {
                     }
                     DatePicker("Data", selection: $date, displayedComponents: .date)
                     TextField("Nota (facoltativa)", text: $note)
+                    NoteSuggestionsRow(typed: note, expenses: all) { s in
+                        note = s.note
+                        if cats.contains(where: { $0.name == s.category }) { catName = s.category }
+                    }
                 }
                 Section("Pagamento") {
                     Picker("Pagato con", selection: $method) {
