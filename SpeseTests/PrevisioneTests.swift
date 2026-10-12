@@ -33,4 +33,18 @@ final class PrevisioneTests: XCTestCase {
         XCTAssertEqual(list.count, 1, "Una sola entrata, non due")
         XCTAssertEqual(list.first?.kind, "Rimborso")
     }
+
+    /// Cena da 80 €, Marco ne restituisce 40 sul conto: nel periodo spesi 40, entrate solo lo stipendio.
+    func testRimborsiNonSonoEntrate() {
+        let start = Date().addingTimeInterval(-5 * 86400), end = Date().addingTimeInterval(20 * 86400)
+        let cena = Expense(amount: 80, categoryName: "Pranzi/Cene fuori", date: Date().addingTimeInterval(-86400), note: "Cena")
+        cena.owedBy = "Marco"; cena.owedAmount = 40; cena.settled = true
+        let inc = [Income(amount: 1500, saved: 0, kind: "Stipendio", date: start, note: ""),
+                   Income(amount: 40, saved: 0, kind: "Rimborso", date: Date(), note: "Rimborso Marco")]
+        let cash = [CashMove(amount: 10, date: Date(), note: "Rimborso Luca", kind: "ricevuti", bank: false)]
+        let s = summarize(expenses: [cena], incomes: inc, cash: cash, start: start, end: end)
+        XCTAssertEqual(s.total, 40, "Spesi: solo la mia parte")
+        XCTAssertEqual(s.income, 1500, "Entrate: senza i rimborsi")
+        XCTAssertEqual(s.refunds, 50, "Rimborsi ricevuti, sul conto e in contanti")
+    }
 }
