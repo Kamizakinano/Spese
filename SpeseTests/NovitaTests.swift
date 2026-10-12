@@ -15,11 +15,30 @@ final class NovitaTests: XCTestCase {
             Income(amount: 1500, saved: 300, kind: "Stipendio", date: d(2026, 10, 10), note: "Stipendio")
         ]
         let ex = [Expense(amount: 100, categoryName: "Svago", date: d(2026, 10, 12), note: "")]
-        let l = Ledger(incomes: incomes, expenses: ex, moves: [], start: d(2026, 10, 1, hour: 0))
+        let l = Ledger(incomes: incomes, expenses: ex, moves: [], start: d(2026, 10, 1, hour: 0), now: d(2026, 10, 15))
         let f = l.figures(for: d(2026, 10, 15))
         XCTAssertEqual(f.incomeNet, 1200, accuracy: 0.001, "Entrate = solo lo stipendio (al netto dei risparmi)")
         XCTAssertEqual(f.startAvail, 1000, accuracy: 0.001, "Il saldo iniziale conta come soldi già in banca")
         XCTAssertEqual(f.left, 2100, accuracy: 0.001, "Il disponibile non cambia")
+    }
+
+    // Spese "In arrivo": con data futura non scendono ancora dalla carta.
+    func testSpesaFuturaNonScendeDallaCarta() {
+        let incomes = [Income(amount: 1500, saved: 0, kind: "Stipendio", date: d(2026, 10, 10), note: "")]
+        let ex = [
+            Expense(amount: 100, categoryName: "Svago", date: d(2026, 10, 12), note: ""),
+            Expense(amount: 423.19, categoryName: "Casa e bollette", date: d(2026, 10, 26), note: "Bolletta")
+        ]
+        let prima = Ledger(incomes: incomes, expenses: ex, moves: [], start: d(2026, 10, 1, hour: 0), now: d(2026, 10, 15))
+        XCTAssertEqual(prima.figures(for: d(2026, 10, 15)).left, 1400, accuracy: 0.001, "La bolletta del 26 non conta ancora")
+        let dopo = Ledger(incomes: incomes, expenses: ex, moves: [], start: d(2026, 10, 1, hour: 0), now: d(2026, 10, 26))
+        XCTAssertEqual(dopo.figures(for: d(2026, 10, 26)).left, 976.81, accuracy: 0.001, "Il 26 diventa una spesa normale")
+    }
+
+    func testPrevisioneTieneDaParteLeSpeseInArrivo() {
+        let f = makeForecast(available: 1000, spent: 0, period: (d(2026, 10, 10, hour: 0), d(2026, 11, 10, hour: 0)),
+                             upcoming: 400, now: d(2026, 10, 10))
+        XCTAssertEqual(f.budgetPerDay * Double(f.daysLeft), 600, accuracy: 0.01)
     }
 
     // 3. Categorie imparate correggendo una spesa.

@@ -12,7 +12,7 @@ struct Forecast {
     let spent: Double        // speso dall'ultimo stipendio
     let elapsedDays: Int     // giorni passati dallo stipendio, oggi compreso
     let daysLeft: Int        // giorni da oggi al prossimo stipendio, oggi compreso
-    var upcoming: Double = 0 // spese ricorrenti che arrivano prima dello stipendio
+    var upcoming: Double = 0 // spese "In arrivo" prima dello stipendio
     var avgPerDay: Double { spent / Double(max(elapsedDays, 1)) }
     var budgetPerDay: Double { max(available - upcoming, 0) / Double(max(daysLeft, 1)) }
     /// Soldi che restano il giorno prima dello stipendio se la media resta questa.
@@ -122,7 +122,9 @@ struct ForecastSection: View {
         let d = PeriodData(all: raw, trips: trips, incomes: incomes, moves: moves, cash: cash,
                            account: accounts.first, payments: payments)
         if let p = d.period {
-            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p)
+            let soon = statExpenses(raw, trips: trips).filter { $0.date >= Ledger.endOfToday && $0.date < p.end && $0.paidByMe }
+                .reduce(0) { $0 + $1.myAmount }
+            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon)
             Section("Previsione") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")

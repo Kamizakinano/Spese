@@ -44,6 +44,7 @@ struct ContentView: View {
             updateWidgetSnapshot(ctx)
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
             await scheduleSubscriptionReminders(ctx)
+            await scheduleUpcomingReminders(ctx)
         }
         .onOpenURL { url in if url.host == quickAddURL.host { quick.show = true } }
         .sheet(isPresented: quickShown) { QuickAddView() }
@@ -54,7 +55,7 @@ struct ContentView: View {
                 if !accounts.isEmpty { runAutoBackup(ctx) }
                 if lockOn && locked { authenticate() }
                 updateWidgetSnapshot(ctx)
-                Task { await scheduleSubscriptionReminders(ctx) }
+                Task { await scheduleSubscriptionReminders(ctx); await scheduleUpcomingReminders(ctx) }
             }
             if p == .background {
                 try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa
@@ -140,8 +141,15 @@ struct HomeView: View {
     @State private var filterMethod = ""
     @State private var editing: Expense?
 
+    /// Spese del mese mostrato, fino a oggi (quelle con data futura sono "in arrivo").
     private var expenses: [Expense] {
-        all.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) }
+        all.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) && $0.date < Ledger.endOfToday }
+    }
+    /// Spese inserite con una data futura, dalla più vicina.
+    private var upcoming: [Expense] { all.filter { $0.date >= Ledger.endOfToday }.sorted { $0.date < $1.date } }
+    /// Quanto delle spese in arrivo cade prima del prossimo stipendio (soldi già impegnati).
+    private func upcomingTotal(before end: Date) -> Double {
+        upcoming.filter { $0.date < end && $0.paidByMe }.reduce(0) { $0 + $1.myAmount }
     }
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var fig: Figures { ledger.figures(for: month) }
@@ -202,7 +210,7 @@ struct HomeView: View {
         return payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd)
     }
     private func spentInPeriod(_ p: (start: Date, end: Date)) -> Double {
-        statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.myAmount }
+        statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + $1.myAmount }
     }
 
     /// Quanto si può spendere al giorno fino al prossimo stipendio e quanto si è speso da allora.
@@ -221,7 +229,7 @@ struct HomeView: View {
                             Image(systemName: "calendar.badge.clock").opacity(0.75)
                         }
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(eur(max(totalAvailable, 0) / Double(days))).font(.title3.bold())
+                            Text(eur(max(totalAvailable - upcomingTotal(before: p.end), 0) / Double(days))).font(.title3.bold())
                             Text("/ giorno").font(.subheadline).opacity(0.75)
                         }.lineLimit(1).minimumScaleFactor(0.7)
                         Text("Fino al \(endText) • ancora \(days) \(days == 1 ? "giorno" : "giorni")")
@@ -239,6 +247,11 @@ struct HomeView: View {
                             Image(systemName: "pencil").foregroundStyle(HeroStyle.mint)
                         }
                         Text(eur(spentInPeriod(p))).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                        let soon = upcomingTotal(before: p.end)
+                        if soon > 0 {
+                            Label("In arrivo: \(eur(soon))", systemImage: "hourglass")
+                                .font(.caption2.weight(.semibold)).foregroundStyle(Color(hex: "FFD9A8")).lineLimit(1).minimumScaleFactor(0.7)
+                        }
                     }
                     .multilineTextAlignment(.leading)
                     .padding(12).frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
@@ -285,6 +298,33 @@ struct HomeView: View {
                         Text("Da completare")
                     } footer: {
                         Text("Apple Pay non ha passato un importo leggibile: la spesa è salvata, manca solo la cifra.")
+                    }
+                }
+
+                if !upcoming.isEmpty {
+                    Section {
+                        ForEach(upcoming) { e in
+                            let l = look(e.categoryRaw)
+                            let n = daysLeft(until: e.date)
+                            Button { editing = e } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(l.color)
+                                        .frame(width: 42, height: 42).background(l.color.opacity(0.14), in: Circle())
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
+                                        Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(n == 1 ? "domani" : "tra \(n) giorni")")
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(eur(e.amount)).bold().foregroundStyle(.primary)
+                                }
+                            }
+                        }
+                        .onDelete { idx in idx.map { upcoming[$0] }.forEach { deleteExpense($0, ctx: ctx) } }
+                    } header: {
+                        Label("In arrivo", systemImage: "hourglass")
+                    } footer: {
+                        Text("Spese con data futura: non scendono ancora dalla carta, ma il budget giornaliero le tiene già da parte. Nel giorno indicato passano da sole tra le spese.")
                     }
                 }
 
@@ -410,6 +450,8 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("Le mie spese").navigationBarTitleDisplayMode(.inline)
+            // Avvisi del giorno delle spese "In arrivo", rifatti a ogni modifica.
+            .task(id: upcoming.map { "\($0.date.timeIntervalSince1970)|\($0.amount)|\($0.note)" }) { await scheduleUpcomingReminders(ctx) }
             .searchable(text: $search, prompt: "Cerca spese")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

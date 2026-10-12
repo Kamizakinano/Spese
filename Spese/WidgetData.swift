@@ -14,7 +14,7 @@ func updateWidgetSnapshot(_ ctx: ModelContext) {
     let trips = (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []
     let p = payPeriod(day: account.salaryDay, customStart: account.periodStart, customEnd: account.periodEnd)
     let spent = p.map { p in
-        statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < p.end }.reduce(0) { $0 + $1.myAmount }
+        statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + $1.myAmount }
     } ?? 0
     WidgetSnapshot(available: l.figures(for: Date()).left + l.cashBalance(), periodStart: p?.start, periodEnd: p?.end,
                    spentSincePay: spent, updated: Date()).save()

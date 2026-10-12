@@ -155,7 +155,7 @@ struct PeriodSummariesLinks: View {
     @Query private var cashMoves: [CashMove]
     @Query private var allRaw: [Expense]
     @Query private var trips: [Trip]
-    private var all: [Expense] { statExpenses(allRaw, trips: trips) }
+    private var all: [Expense] { statExpenses(allRaw, trips: trips).filter { $0.date < Ledger.endOfToday } }  // "In arrivo" escluse
     @Query private var incomes: [Income]
     @Query private var accounts: [Account]
 
