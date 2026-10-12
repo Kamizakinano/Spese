@@ -33,7 +33,7 @@ struct StatsView: View {
         let today = cal.component(.day, from: Date())
         var cum = 0.0
         return (1...today).map { d in
-            cum += current.filter { cal.component(.day, from: $0.date) == d }.reduce(0) { $0 + $1.myAmount }
+            cum += current.filter { cal.component(.day, from: $0.date) == d }.reduce(0) { $0 + everydaySpend($1) }
             return DayPoint(day: d, cum: cum)
         }
     }
@@ -43,7 +43,7 @@ struct StatsView: View {
             let d = cal.date(byAdding: .month, value: -i, to: Date()) ?? Date()
             let inc = incomes.filter { $0.kind != initialKind && $0.kind != "Rimborso" && cal.isDate($0.date, equalTo: d, toGranularity: .month) }
             return MonthTotal(id: i, label: d.formatted(.dateTime.month(.abbreviated)),
-                              spent: inMonth(d).reduce(0) { $0 + $1.myAmount },
+                              spent: inMonth(d).reduce(0) { $0 + everydaySpend($1) },
                               income: inc.reduce(0) { $0 + $1.amount })
         }
     }
@@ -51,7 +51,7 @@ struct StatsView: View {
     var body: some View {
         NavigationStack {
             List {
-                let total = current.reduce(0) { $0 + $1.myAmount }
+                let total = current.reduce(0) { $0 + everydaySpend($1) }
                 let today = max(cal.component(.day, from: Date()), 1)
                 PeriodSummariesLinks()
                 ForecastSection()

@@ -16,19 +16,24 @@ struct PeriodSummary {
     let count: Int
     let income: Double
     let byCategory: [CategoryAmount]
+    var refunds: Double = 0   // rimborsi ricevuti da "Ti devono" (già tolti dalle spese, non contati come entrate)
 }
 
-/// Totali di un periodo: spese (carta e contanti), entrate (senza il saldo iniziale) e categorie.
-func summarize(expenses: [Expense], incomes: [Income], start: Date, end: Date) -> PeriodSummary {
+/// Totali di un periodo: spese (carta e contanti, senza la parte già restituita dagli altri),
+/// entrate (senza il saldo iniziale e senza i rimborsi) e categorie.
+func summarize(expenses: [Expense], incomes: [Income], cash: [CashMove] = [], start: Date, end: Date) -> PeriodSummary {
     let ex = expenses.filter { $0.date >= start && $0.date < end }
     let cats = Dictionary(grouping: ex, by: \.categoryRaw)
-        .map { CategoryAmount(name: $0.key, total: $0.value.reduce(0) { $0 + $1.myAmount }) }
+        .map { CategoryAmount(name: $0.key, total: $0.value.reduce(0) { $0 + everydaySpend($1) }) }
         .filter { $0.total > 0 }
         .sorted { $0.total > $1.total }
-    let inc = incomes.filter { $0.kind != initialKind && $0.date >= start && $0.date < end }
-        .reduce(0) { $0 + $1.amount }
-    return PeriodSummary(start: start, end: end, total: ex.reduce(0) { $0 + $1.myAmount },
-                         count: ex.count, income: inc, byCategory: cats)
+    let inPeriod = incomes.filter { $0.kind != initialKind && $0.date >= start && $0.date < end }
+    let inc = inPeriod.filter { $0.kind != "Rimborso" }.reduce(0) { $0 + $1.amount }
+    let refunds = inPeriod.filter { $0.kind == "Rimborso" }.reduce(0) { $0 + $1.amount }
+        + cash.filter { $0.kind == "ricevuti" && $0.note.hasPrefix("Rimborso") && $0.date >= start && $0.date < end }
+            .reduce(0) { $0 + $1.amount }
+    return PeriodSummary(start: start, end: end, total: ex.reduce(0) { $0 + everydaySpend($1) },
+                         count: ex.count, income: inc, byCategory: cats, refunds: refunds)
 }
 
 /// Il periodo che finisce il giorno `start` (da uno stipendio al precedente).
@@ -108,6 +113,13 @@ struct PeriodSummaryView: View {
 
             Section {
                 HStack { Text("Entrate nel periodo"); Spacer(); Text(eur(summary.income)).bold() }
+                if summary.refunds > 0 {
+                    HStack {
+                        Text("Rimborsi ricevuti").font(.footnote).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(eur(summary.refunds)).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if summary.income > 0 {
                     HStack {
                         Text(summary.income >= summary.total ? "Avanzato" : "Speso più delle entrate")
@@ -140,6 +152,7 @@ struct PeriodSummaryView: View {
 
 /// Elenco dei riepiloghi (periodo in corso e precedente), per la scheda Statistiche.
 struct PeriodSummariesLinks: View {
+    @Query private var cashMoves: [CashMove]
     @Query private var allRaw: [Expense]
     @Query private var trips: [Trip]
     private var all: [Expense] { statExpenses(allRaw, trips: trips) }
@@ -148,11 +161,11 @@ struct PeriodSummariesLinks: View {
 
     var body: some View {
         if let a = accounts.first, let p = payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd) {
-            let current = summarize(expenses: all, incomes: incomes, start: p.start, end: p.end)
+            let current = summarize(expenses: all, incomes: incomes, cash: cashMoves, start: p.start, end: p.end)
             let prevRange = previousPeriod(before: p.start, day: a.salaryDay)
-            let prev = prevRange.map { summarize(expenses: all, incomes: incomes, start: $0.start, end: $0.end) }
+            let prev = prevRange.map { summarize(expenses: all, incomes: incomes, cash: cashMoves, start: $0.start, end: $0.end) }
             let beforePrev = prevRange.flatMap { previousPeriod(before: $0.start, day: a.salaryDay) }
-                .map { summarize(expenses: all, incomes: incomes, start: $0.start, end: $0.end) }
+                .map { summarize(expenses: all, incomes: incomes, cash: cashMoves, start: $0.start, end: $0.end) }
             Section("Da uno stipendio all'altro") {
                 NavigationLink {
                     PeriodSummaryView(title: "Periodo in corso", summary: current, previous: prev)

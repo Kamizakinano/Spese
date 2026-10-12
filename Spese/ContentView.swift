@@ -530,10 +530,10 @@ struct HomeView: View {
             return (s, e)
         }()
         guard let prev = chosen ?? previousPeriod(before: p.start, day: a.salaryDay) else { return }
-        let s = summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, start: prev.start, end: prev.end)
+        let s = summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, cash: cashMoves, start: prev.start, end: prev.end)
         guard s.count > 0 else { return }
         let before = previousPeriod(before: prev.start, day: a.salaryDay)
-            .map { summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, start: $0.start, end: $0.end) }
+            .map { summarize(expenses: statExpenses(all, trips: trips), incomes: incomes, cash: cashMoves, start: $0.start, end: $0.end) }
         endedSummary = EndedPeriod(summary: s, previous: before)
     }
 
