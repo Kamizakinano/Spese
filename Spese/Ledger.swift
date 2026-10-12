@@ -91,6 +91,8 @@ struct Ledger {
     let start: Date?
     var cashStart: Double = 0
     var payments: [TripPayment] = []   // rimborsi dei viaggi
+    /// "Oggi": le spese con una data successiva sono "in arrivo" e non toccano ancora i soldi.
+    var now: Date = Date()
 
     static var endOfToday: Date {
         Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) ?? Date()
@@ -98,10 +100,11 @@ struct Ledger {
 
     /// Situazione della banca (carta) per un mese.
     func figures(for month: Date) -> Figures {
+        let cutoff = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now)) ?? now
         guard let start, let iv = Calendar.current.dateInterval(of: .month, for: month) else { return Figures() }
         func ex(_ a: Date, _ b: Date) -> Double {
             // Le spese pagate da altri (nei viaggi) non toccano i miei soldi.
-            expenses.filter { !$0.isCash && $0.paidByMe && $0.date >= max(a, start) && $0.date < b }.reduce(0) { $0 + $1.amount }
+            expenses.filter { !$0.isCash && $0.paidByMe && $0.date >= max(a, start) && $0.date < min(b, cutoff) }.reduce(0) { $0 + $1.amount }
         }
         func pay(_ a: Date, _ b: Date) -> Double {
             Ledger.myPayments(payments, cash: false, from: max(a, start), to: b)

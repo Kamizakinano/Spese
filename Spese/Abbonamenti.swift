@@ -43,6 +43,27 @@ func scheduleSubscriptionReminders(_ ctx: ModelContext) async {
     }
 }
 
+/// Avvisi delle spese "In arrivo": il giorno della spesa, alle 9.
+@MainActor
+func scheduleUpcomingReminders(_ ctx: ModelContext, now: Date = Date()) async {
+    let center = UNUserNotificationCenter.current()
+    let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("inarrivo-") }
+    center.removePendingNotificationRequests(withIdentifiers: pending)
+    let cal = Calendar.current
+    let future = ((try? ctx.fetch(FetchDescriptor<Expense>())) ?? []).filter { $0.date >= Ledger.endOfToday }
+    for e in future.sorted(by: { $0.date < $1.date }).prefix(40) {
+        guard let at = cal.date(bySettingHour: 9, minute: 0, second: 0, of: e.date), at > now else { continue }
+        let c = UNMutableNotificationContent()
+        c.title = "Oggi"
+        c.body = "\(e.note.isEmpty ? e.categoryRaw : e.note): \(eur(e.amount))"
+        c.sound = .default
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: at)
+        let req = UNNotificationRequest(identifier: "inarrivo-\(e.persistentModelID.hashValue)-\(e.date.timeIntervalSince1970)", content: c,
+                                        trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false))
+        try? await center.add(req)
+    }
+}
+
 struct SubscriptionsView: View {
     @Environment(\.modelContext) private var ctx
     @Query private var all: [Recurring]

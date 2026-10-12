@@ -9,7 +9,7 @@ struct StatsView: View {
     @Query private var allRaw: [Expense]
     @Query private var trips: [Trip]
     /// Spese che contano nelle statistiche (senza i viaggi tenuti a parte).
-    private var all: [Expense] { statExpenses(allRaw, trips: trips) }
+    private var all: [Expense] { statExpenses(allRaw, trips: trips).filter { $0.date < Ledger.endOfToday } }  // "In arrivo" escluse
     @Query private var incomes: [Income]
     @Query private var moves: [SavingsMove]
     @Query private var cashMoves: [CashMove]
