@@ -124,6 +124,9 @@ struct ContiView: View {
                     NavigationLink { IncomesView() } label: {
                         Label { Text("Entrate e stipendio") } icon: { Image(systemName: "arrow.down.circle").foregroundStyle(Theme.accent) }
                     }
+                    NavigationLink { InstallmentsView() } label: {
+                        Label { Text("Pagamenti a rate") } icon: { Image(systemName: "calendar.badge.clock").foregroundStyle(Theme.accent) }
+                    }
                     NavigationLink { CardLinkView() } label: {
                         Label { Text("Collega la carta (Apple Pay)") } icon: { Image(systemName: "creditcard.and.123").foregroundStyle(Theme.accent) }
                     }

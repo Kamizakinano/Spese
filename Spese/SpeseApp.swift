@@ -49,6 +49,13 @@ struct SpeseApp: App {
     var needsAmount: Bool = false    // arrivata da Apple Pay senza un importo leggibile: da completare
     var settledMethod: String = ""   // "Ti devono": incassato "carta" (sul conto) o "contanti"
     var refundKey: String = ""       // lega la spesa all'entrata (o ai contanti) del rimborso incassato
+    // Pagamenti a rate: ogni rata è una spesa, legata alle altre dello stesso acquisto
+    var planID: String = ""          // acquisto a cui appartiene ("" = nessuno)
+    var planName: String = ""        // cosa è stato comprato
+    var planProvider: String = ""    // PayPal, Klarna…
+    var planIndex: Int = 0           // numero della rata (da 1)
+    var planCount: Int = 0           // rate totali
+    var planTotal: Double = 0        // importo totale dell'acquisto
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }
@@ -163,6 +170,7 @@ let defaultCategories: [(String, String, String)] = [
     ("Casa e bollette", "house", "16A085"), ("Salute", "cross.case", "C0392B"),
     ("Svago", "popcorn", "D4A017"), ("Shopping", "bag", "E84393"),
     (giftCardCategory, "giftcard", "6C5CE7"),
+    (installmentCategory, "calendar.badge.clock", "0E7C86"),
     ("Altro", "ellipsis.circle", "7F8C8D")
 ]
 

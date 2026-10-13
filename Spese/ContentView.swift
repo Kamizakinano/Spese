@@ -82,16 +82,21 @@ struct ContentView: View {
             for (i, c) in defaultCategories.enumerated() {
                 ctx.insert(CategoryItem(name: c.0, icon: c.1, colorHex: c.2, order: i))
             }
-        } else if !UserDefaults.standard.bool(forKey: giftCardAddedKey),
-                  !existing.contains(where: { $0.name == giftCardCategory }),
-                  let gift = defaultCategories.first(where: { $0.0 == giftCardCategory }) {
-            // Chi aveva già le categorie riceve la nuova Gift Card prima di "Altro".
-            let other = existing.first { $0.name == "Altro" }
-            let order = other?.order ?? ((existing.map(\.order).max() ?? 0) + 1)
-            if let other { other.order += 1 }
-            ctx.insert(CategoryItem(name: gift.0, icon: gift.1, colorHex: gift.2, order: order))
+        } else {
+            // Chi aveva già le categorie riceve quelle nuove prima di "Altro".
+            var orders = existing.map(\.order)
+            for (name, key) in [(giftCardCategory, giftCardAddedKey), (installmentCategory, installmentAddedKey)]
+            where !UserDefaults.standard.bool(forKey: key) && !existing.contains(where: { $0.name == name }) {
+                guard let c = defaultCategories.first(where: { $0.0 == name }) else { continue }
+                let other = existing.first { $0.name == "Altro" }
+                let order = other?.order ?? ((orders.max() ?? 0) + 1)
+                if let other { other.order += 1 }
+                orders.append(order)
+                ctx.insert(CategoryItem(name: c.0, icon: c.1, colorHex: c.2, order: order))
+            }
         }
         UserDefaults.standard.set(true, forKey: giftCardAddedKey)
+        UserDefaults.standard.set(true, forKey: installmentAddedKey)
     }
 
     private func generateAll() {
@@ -146,10 +151,15 @@ struct HomeView: View {
         all.filter { Calendar.current.isDate($0.date, equalTo: month, toGranularity: .month) && $0.date < Ledger.endOfToday }
     }
     /// Spese inserite con una data futura, dalla più vicina.
-    private var upcoming: [Expense] { all.filter { $0.date >= Ledger.endOfToday }.sorted { $0.date < $1.date } }
+    private var upcomingAll: [Expense] { all.filter { $0.date >= Ledger.endOfToday }.sorted { $0.date < $1.date } }
+    /// Da mostrare in "In arrivo": di ogni acquisto a rate solo la prossima rata.
+    private var upcoming: [Expense] {
+        var seen = Set<String>()
+        return upcomingAll.filter { $0.planID.isEmpty || seen.insert($0.planID).inserted }
+    }
     /// Quanto delle spese in arrivo cade prima del prossimo stipendio (soldi già impegnati).
     private func upcomingTotal(before end: Date) -> Double {
-        upcoming.filter { $0.date < end && $0.paidByMe }.reduce(0) { $0 + $1.myAmount }
+        upcomingAll.filter { $0.date < end && $0.paidByMe }.reduce(0) { $0 + $1.myAmount }
     }
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
     private var fig: Figures { ledger.figures(for: month) }
@@ -312,7 +322,7 @@ struct HomeView: View {
                                         .frame(width: 42, height: 42).background(l.color.opacity(0.14), in: Circle())
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
-                                        Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(n == 1 ? "domani" : "tra \(n) giorni")")
+                                        Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(n == 1 ? "domani" : "tra \(n) giorni")" + (e.planProvider.isEmpty ? "" : " · \(e.planProvider)"))
                                             .font(.subheadline).foregroundStyle(.secondary)
                                     }
                                     Spacer()
@@ -404,6 +414,17 @@ struct HomeView: View {
                                     }.frame(width: 46, height: 4)
                                 }
                             }
+                            // Pagamenti a rate: quanto con PayPal, quanto con Klarna…
+                            if i.name == installmentCategory {
+                                ForEach(installmentProviderTotals(statMonth), id: \.name) { p in
+                                    HStack {
+                                        Text(p.name).font(.subheadline).foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(eur(p.total)).font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                    .padding(.leading, 52)
+                                }
+                            }
                         }
                     }
                 }
@@ -451,7 +472,7 @@ struct HomeView: View {
             }
             .navigationTitle("Le mie spese").navigationBarTitleDisplayMode(.inline)
             // Avvisi del giorno delle spese "In arrivo", rifatti a ogni modifica.
-            .task(id: upcoming.map { "\($0.date.timeIntervalSince1970)|\($0.amount)|\($0.note)" }) { await scheduleUpcomingReminders(ctx) }
+            .task(id: upcomingAll.map { "\($0.date.timeIntervalSince1970)|\($0.amount)|\($0.note)" }) { await scheduleUpcomingReminders(ctx) }
             .searchable(text: $search, prompt: "Cerca spese")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

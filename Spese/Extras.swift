@@ -16,8 +16,14 @@ struct AddExpenseView: View {
     @Query private var all: [Expense]
     let defaultDate: Date
     var editing: Expense? = nil
+    var presetCategory: String? = nil
 
     @State private var amountText = ""
+    @State private var provider = "PayPal"
+    @State private var rateCount = 3
+    @State private var ratePaid = 0
+    /// Nuovo acquisto a rate: l'importo è il totale e si creano le rate da pagare.
+    private var isPlan: Bool { editing == nil && catName == installmentCategory }
     @AppStorage("lastMethod") private var lastMethod = "carta"
     @State private var method = "carta"
     @State private var catName = ""
@@ -51,60 +57,63 @@ struct AddExpenseView: View {
                     Picker("Categoria", selection: $catName) {
                         ForEach(cats) { c in Label(c.name, systemImage: c.icon).tag(c.name) }
                     }
-                    DatePicker("Data", selection: $date, displayedComponents: .date)
-                    TextField("Nota (facoltativa)", text: $note)
+                    DatePicker(isPlan ? "Prossimo addebito" : "Data", selection: $date, displayedComponents: .date)
+                    TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
                     NoteSuggestionsRow(typed: note, expenses: all) { s in
                         note = s.note
                         if cats.contains(where: { $0.name == s.category }) { catName = s.category }
                     }
                 }
-                Section("Pagamento") {
-                    Picker("Pagato con", selection: $method) {
-                        Text("Carta").tag("carta")
-                        Text("Contanti").tag("contanti")
-                    }.pickerStyle(.segmented)
-                }
-                Section("Viaggio o tag") {
-                    TextField("Tag (es. Roma 2026)", text: $tag)
-                    if !knownTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack { ForEach(knownTags, id: \.self) { t in Button(t) { tag = t }.buttonStyle(.bordered) } }
+                if isPlan { planSection }
+                if !isPlan {
+                    Section("Pagamento") {
+                        Picker("Pagato con", selection: $method) {
+                            Text("Carta").tag("carta")
+                            Text("Contanti").tag("contanti")
+                        }.pickerStyle(.segmented)
+                    }
+                    Section("Viaggio o tag") {
+                        TextField("Tag (es. Roma 2026)", text: $tag)
+                        if !knownTags.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack { ForEach(knownTags, id: \.self) { t in Button(t) { tag = t }.buttonStyle(.bordered) } }
+                            }
                         }
                     }
-                }
-                Section {
-                    Toggle("Ho pagato anche per altri", isOn: $shared)
-                    if shared {
-                        TextField("Chi ti deve i soldi", text: $owedBy)
-                        if !knownPeople.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack {
-                                    ForEach(knownPeople, id: \.self) { p in
-                                        Button(p) { owedBy = p }
-                                            .buttonStyle(.bordered)
-                                            .tint(owedBy == p ? Theme.accent : .gray)
+                    Section {
+                        Toggle("Ho pagato anche per altri", isOn: $shared)
+                        if shared {
+                            TextField("Chi ti deve i soldi", text: $owedBy)
+                            if !knownPeople.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack {
+                                        ForEach(knownPeople, id: \.self) { p in
+                                            Button(p) { owedBy = p }
+                                                .buttonStyle(.bordered)
+                                                .tint(owedBy == p ? Theme.accent : .gray)
+                                        }
                                     }
                                 }
                             }
-                        }
-                        TextField("Quanto ti deve (€)", text: $owedText).keyboardType(.decimalPad)
-                        if let a = parseAmount(amountText), a > 0 {
-                            HStack {
-                                Button("Metà (\(eur(a / 2)))") { owedText = amountString((a / 2 * 100).rounded() / 100) }
-                                Button("Tutto") { owedText = amountString(a) }
+                            TextField("Quanto ti deve (€)", text: $owedText).keyboardType(.decimalPad)
+                            if let a = parseAmount(amountText), a > 0 {
+                                HStack {
+                                    Button("Metà (\(eur(a / 2)))") { owedText = amountString((a / 2 * 100).rounded() / 100) }
+                                    Button("Tutto") { owedText = amountString(a) }
+                                }
+                                .buttonStyle(.bordered).font(.footnote)
                             }
-                            .buttonStyle(.bordered).font(.footnote)
                         }
-                    }
-                } header: {
-                    Text("Spesa condivisa")
-                } footer: {
-                    if !error.isEmpty { Text(error).foregroundStyle(.red) }
-                    if shared {
-                        Text("La spesa va nei movimenti e in Ti devono. Quando la persona ti restituisce i soldi, tocca Incassato in Ti devono: nel movimento comparirà la conferma.")
+                    } header: {
+                        Text("Spesa condivisa")
+                    } footer: {
+                        if !error.isEmpty { Text(error).foregroundStyle(.red) }
+                        if shared {
+                            Text("La spesa va nei movimenti e in Ti devono. Quando la persona ti restituisce i soldi, tocca Incassato in Ti devono: nel movimento comparirà la conferma.")
+                        }
                     }
                 }
-                if editing == nil {
+                if editing == nil && !isPlan {
                     Section("Scontrino") {
                         Button { showScanner = true } label: { Label("Fotografa lo scontrino", systemImage: "camera") }
                         PhotosPicker(selection: $photoItem, matching: .images) {
@@ -144,6 +153,35 @@ struct AddExpenseView: View {
         .presentationDetents([.large])
     }
 
+    @ViewBuilder private var planSection: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(installmentProviders, id: \.self) { p in
+                        Button(p) { provider = p }.buttonStyle(.bordered).tint(provider == p ? Theme.accent : .gray)
+                    }
+                }
+            }
+            Stepper("Numero di rate: **\(rateCount)**", value: $rateCount, in: 2...48)
+            Stepper("Rate già pagate: **\(ratePaid)**", value: $ratePaid, in: 0...(rateCount - 1))
+            if let a = parseAmount(amountText), a > 0 {
+                let s = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
+                LabeledContent("Importo di ogni rata", value: eur(s.first?.amount ?? 0))
+                Text("Mancano **\(s.count) \(s.count == 1 ? "rata" : "rate")** · **\(eur(s.reduce(0) { $0 + $1.amount }))** alla fine")
+                ForEach(s.prefix(12), id: \.index) { r in
+                    LabeledContent("Rata \(r.index) · \(r.date.formatted(.dateTime.day().month(.abbreviated).year()))", value: eur(r.amount))
+                        .font(.footnote)
+                }
+            }
+        } header: {
+            Text("Rate")
+        } footer: {
+            if !error.isEmpty { Text(error).foregroundStyle(.red) }
+            Text("L'importo è il totale dell'acquisto. Le rate già pagate non cambiano il saldo; le altre vanno in \"In arrivo\" e scendono dalla carta il giorno dell'addebito, una al mese.")
+        }
+        .onChange(of: rateCount) { _, n in if ratePaid > n - 1 { ratePaid = n - 1 } }
+    }
+
     private var refundQuestion: String {
         guard let e = editing else { return "" }
         let who = e.owedBy.isEmpty ? "Qualcuno" : e.owedBy
@@ -158,6 +196,7 @@ struct AddExpenseView: View {
         } else {
             date = defaultDate
             method = lastMethod
+            if let c = presetCategory { catName = c }
             if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
             focus = true
         }
@@ -180,6 +219,13 @@ struct AddExpenseView: View {
     /// (true = cambiala anche nell'incasso, false = lasciala com'è, nil = non ancora chiesto).
     private func save(refund: Bool?) {
         guard let a = parseAmount(amountText), a > 0 else { error = "Inserisci l'importo."; return }
+        if isPlan {
+            let name = note.trimmingCharacters(in: .whitespaces)
+            for e in makeInstallments(total: a, count: rateCount, paid: ratePaid, first: date,
+                                      name: name.isEmpty ? provider : name, provider: provider) { ctx.insert(e) }
+            dismiss()
+            return
+        }
         let t = tag.trimmingCharacters(in: .whitespaces)
         var owed = shared ? (parseAmount(owedText) ?? 0) : 0
         guard owed <= a + 0.005 else { error = "Quanto ti devono non può superare l'importo della spesa."; return }
@@ -449,7 +495,9 @@ struct Backup: Codable {
         var tag: String; var owedBy: String; var owedAmount: Double; var settled: Bool; var method: String? = nil
         var tripID: String? = nil; var originalAmount: Double? = nil; var originalCurrency: String? = nil
         var rate: Double? = nil; var paidBy: String? = nil; var splitJSON: String? = nil
-        var needsAmount: Bool? = nil; var settledMethod: String? = nil; var refundKey: String? = nil }
+        var needsAmount: Bool? = nil; var settledMethod: String? = nil; var refundKey: String? = nil
+        var planID: String? = nil; var planName: String? = nil; var planProvider: String? = nil
+        var planIndex: Int? = nil; var planCount: Int? = nil; var planTotal: Double? = nil }
     struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
         var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
     struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
@@ -488,7 +536,9 @@ func backupData(_ ctx: ModelContext) -> Data? {
                                    tag: x.tag, owedBy: x.owedBy, owedAmount: x.owedAmount, settled: x.settled, method: x.method,
                                    tripID: x.tripID, originalAmount: x.originalAmount, originalCurrency: x.originalCurrency,
                                    rate: x.rate, paidBy: x.paidBy, splitJSON: x.splitJSON,
-                                   needsAmount: x.needsAmount, settledMethod: x.settledMethod, refundKey: x.refundKey))
+                                   needsAmount: x.needsAmount, settledMethod: x.settledMethod, refundKey: x.refundKey,
+                                   planID: x.planID, planName: x.planName, planProvider: x.planProvider,
+                                   planIndex: x.planIndex, planCount: x.planCount, planTotal: x.planTotal))
     }
     for x in all(Income.self) {
         b.incomes.append(Backup.I(amount: x.amount, saved: x.saved, kind: x.kind, date: x.date, note: x.note, refundKey: x.refundKey))
@@ -602,6 +652,8 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         x.tripID = e.tripID ?? ""; x.originalAmount = e.originalAmount ?? 0; x.originalCurrency = e.originalCurrency ?? ""
         x.rate = e.rate ?? 0; x.paidBy = e.paidBy ?? ""; x.splitJSON = e.splitJSON ?? ""
         x.needsAmount = e.needsAmount ?? false; x.settledMethod = e.settledMethod ?? ""; x.refundKey = e.refundKey ?? ""
+        x.planID = e.planID ?? ""; x.planName = e.planName ?? ""; x.planProvider = e.planProvider ?? ""
+        x.planIndex = e.planIndex ?? 0; x.planCount = e.planCount ?? 0; x.planTotal = e.planTotal ?? 0
         ctx.insert(x)
     }
     for i in b.incomes {
