@@ -138,9 +138,13 @@ final class SpeseUITests: XCTestCase {
         app.navigationBars.buttons["Salva"].tap()
         expectText("25,00", "La spesa del viaggio non compare")
         app.tabBars.buttons["Spese"].tap()
-        expectText("giorno 1 di ", "Manca il riquadro del viaggio in corso")
-        expectText("Spesa del viaggio", "Manca il tasto per aggiungere una spesa al viaggio")
         expectText("795,00", "La spesa del viaggio deve scalare il saldo (820 - 25)")
+        // Il riquadro del viaggio sta più in basso nella Home: si scorre finché compare.
+        let tripButton = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Spesa del viaggio")).firstMatch
+        var swipes = 0
+        while !tripButton.exists && swipes < 4 { app.swipeUp(); swipes += 1 }
+        XCTAssertTrue(tripButton.waitForExistence(timeout: 5), "Manca il tasto per aggiungere una spesa al viaggio")
+        expectText("giorno 1 di ", "Manca il riquadro del viaggio in corso")
     }
 
     /// Conta i giorni da oggi al prossimo giorno `day` (escluso oggi), contando un giorno alla volta.

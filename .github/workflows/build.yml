@@ -47,7 +47,13 @@ jobs:
 
           xcodebuild -project Spese.xcodeproj -scheme Spese \
             -configuration Release -sdk iphonesimulator -destination "id=$UDID" \
-            -derivedDataPath build-sim CODE_SIGN_IDENTITY="-" build
+            -derivedDataPath build-sim CODE_SIGN_IDENTITY="-" build 2>&1 | tee build.log
+          BS=${PIPESTATUS[0]}
+          if [ "$BS" -ne 0 ]; then
+            # Gli errori di compilazione diventano annotazioni leggibili dalla pagina del controllo.
+            grep -E "error:" build.log | sort -u | head -20 | sed 's/^/::error::/'
+            exit "$BS"
+          fi
           xcrun simctl install "$UDID" build-sim/Build/Products/Release-iphonesimulator/Spese.app
           PID=$(xcrun simctl launch "$UDID" com.tuonome.spese | awk '{print $NF}')
           echo "Avviata con PID $PID"
@@ -71,7 +77,12 @@ jobs:
           fi
           STATUS=0
           xcodebuild test -project Spese.xcodeproj -scheme Spese -destination "id=$UDID" \
-            -derivedDataPath build-test CODE_SIGN_IDENTITY="-" || STATUS=$?
+            -derivedDataPath build-test CODE_SIGN_IDENTITY="-" 2>&1 | tee test.log
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            # Prove fallite ed errori di compilazione delle prove, come annotazioni.
+            grep -E "error:|failed \(|XCTAssert|Test Case .* failed" test.log | sort -u | head -25 | sed 's/^/::error::/'
+          fi
           if [ -n "$REC" ]; then kill -INT "$REC"; wait "$REC" || true; ls -la video-prove.mp4 || true; fi
           if [ "$STATUS" -ne 0 ]; then exit "$STATUS"; fi
           # Schermata dell'app con i dati lasciati dalle prove.
