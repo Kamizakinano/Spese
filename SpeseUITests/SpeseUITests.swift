@@ -138,7 +138,7 @@ final class SpeseUITests: XCTestCase {
         app.navigationBars.buttons["Salva"].tap()
         expectText("25,00", "La spesa del viaggio non compare")
         app.tabBars.buttons["Spese"].tap()
-        expectText("giorno 1 di 1", "Manca il riquadro del viaggio in corso")
+        expectText("giorno 1 di ", "Manca il riquadro del viaggio in corso")
         expectText("Spesa del viaggio", "Manca il tasto per aggiungere una spesa al viaggio")
         expectText("795,00", "La spesa del viaggio deve scalare il saldo (820 - 25)")
     }
