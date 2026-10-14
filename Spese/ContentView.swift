@@ -280,7 +280,16 @@ struct HomeView: View {
                     HStack {
                         Button { shift(-1) } label: { Image(systemName: "chevron.left") }
                         Spacer()
-                        Text(month.formatted(.dateTime.month(.wide).year())).font(.headline)
+                        // Un tocco sul mese riporta al mese di oggi.
+                        Button { withAnimation { month = Date() } } label: {
+                            VStack(spacing: 1) {
+                                Text(month.formatted(.dateTime.month(.wide).year())).font(.headline).foregroundStyle(.primary)
+                                if !isCurrentMonth {
+                                    Text("Torna a oggi").font(.caption).foregroundStyle(Theme.accent)
+                                }
+                            }
+                        }
+                        .accessibilityHint(isCurrentMonth ? "" : "Torna al mese di oggi")
                         Spacer()
                         Button { shift(1) } label: { Image(systemName: "chevron.right") }
                     }.buttonStyle(.borderless)
