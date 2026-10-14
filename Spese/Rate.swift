@@ -40,6 +40,18 @@ func makeInstallments(total: Double, count: Int, paid: Int, first: Date, name: S
     }
 }
 
+/// Cambia nome (cosa hai comprato) e PayPal/Klarna di tutte le rate di un acquisto.
+func updateInstallmentPlan(_ rates: [Expense], name: String, provider: String) {
+    let n = name.trimmingCharacters(in: .whitespaces)
+    for e in rates {
+        if !n.isEmpty {
+            e.planName = n
+            e.note = "\(n) · rata \(e.planIndex) di \(e.planCount)"
+        }
+        e.planProvider = provider
+    }
+}
+
 /// Un acquisto a rate, ricostruito dalle sue rate.
 struct InstallmentPlan: Identifiable {
     let id: String
@@ -171,6 +183,8 @@ struct InstallmentDetailView: View {
     @Query private var all: [Expense]
     @State private var editing: Expense?
     @State private var askDelete = false
+    @State private var nameText = ""
+    @State private var loaded = false
 
     private var plan: InstallmentPlan? { installmentPlans(all.filter { $0.planID == planID }).first }
 
@@ -178,6 +192,17 @@ struct InstallmentDetailView: View {
         List {
             if let p = plan {
                 Section { PlanRow(plan: p) }
+                Section {
+                    TextField("Cosa hai comprato", text: $nameText)
+                        .submitLabel(.done)
+                        .onSubmit { updateInstallmentPlan(p.rates, name: nameText, provider: p.provider) }
+                    HStack {
+                        ForEach(installmentProviders, id: \.self) { v in
+                            Button(v) { updateInstallmentPlan(p.rates, name: nameText, provider: v) }
+                                .buttonStyle(.bordered).tint(p.provider == v ? Theme.accent : .gray)
+                        }
+                    }
+                } header: { Text("Acquisto") }
                 Section {
                     ForEach(p.rates) { e in
                         let future = e.date >= Ledger.endOfToday
@@ -209,6 +234,9 @@ struct InstallmentDetailView: View {
             }
         }
         .navigationTitle(plan?.name ?? "Rate").navigationBarTitleDisplayMode(.inline)
+        .onAppear { if !loaded, let p = plan { nameText = p.name; loaded = true } }
+        // Il nome si salva anche uscendo dalla pagina senza premere Fine.
+        .onDisappear { if let p = plan, nameText != p.name { updateInstallmentPlan(p.rates, name: nameText, provider: p.provider) } }
         .sheet(item: $editing) { e in AddExpenseView(defaultDate: e.date, editing: e) }
         .confirmationDialog("Eliminare l'acquisto?", isPresented: $askDelete, titleVisibility: .visible) {
             Button("Solo le rate da pagare", role: .destructive) {

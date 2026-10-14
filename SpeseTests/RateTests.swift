@@ -49,3 +49,14 @@ final class RateTests: XCTestCase {
         XCTAssertEqual(defaultCategories.last?.0, "Altro")
     }
 }
+
+final class RateModificaTests: XCTestCase {
+    func testCambiareCosaHaiCompratoAggiornaTutteLeRate() {
+        let rates = makeInstallments(total: 90, count: 3, paid: 0, first: Date(), name: "Zalando", provider: "PayPal")
+        updateInstallmentPlan(rates, name: " Scarpe ", provider: "Klarna")
+        XCTAssertEqual(rates.map(\.note), ["Scarpe · rata 1 di 3", "Scarpe · rata 2 di 3", "Scarpe · rata 3 di 3"])
+        XCTAssertTrue(rates.allSatisfy { $0.planName == "Scarpe" && $0.planProvider == "Klarna" })
+        updateInstallmentPlan(rates, name: "  ", provider: "Klarna")
+        XCTAssertEqual(rates.first?.planName, "Scarpe", "Un nome vuoto non cancella quello di prima")
+    }
+}
