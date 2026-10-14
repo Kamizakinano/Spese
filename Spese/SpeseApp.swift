@@ -56,6 +56,7 @@ struct SpeseApp: App {
     var planIndex: Int = 0           // numero della rata (da 1)
     var planCount: Int = 0           // rate totali
     var planTotal: Double = 0        // importo totale dell'acquisto
+    @Attribute(.externalStorage) var receipt: Data? = nil   // foto dello scontrino (JPEG)
     init(amount: Double, categoryName: String, date: Date, note: String) {
         self.amount = amount; self.categoryRaw = categoryName; self.date = date; self.note = note
     }

@@ -9,7 +9,8 @@ struct SettingsView: View {
     @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
     @AppStorage("reminderOn") private var reminderOn = false
     @AppStorage("reminderHour") private var reminderHour = 21
-    @State private var csvURL: URL?
+    @AppStorage(budgetAlertKey) private var budgetAlert = false
+    @AppStorage(weeklySummaryKey) private var weeklySummary = false
     @State private var backupURL: URL?
     @State private var importing = false
     @State private var confirmRestore = false
@@ -66,7 +67,7 @@ struct SettingsView: View {
                 }
                 Section("Dati") {
                     NavigationLink { AutoBackupView() } label: { Label("Backup automatico", systemImage: "icloud.and.arrow.up") }
-                    if let u = csvURL { ShareLink(item: u) { Label("Esporta in CSV (Excel)", systemImage: "tablecells") } }
+                    NavigationLink { ExportView() } label: { Label("Esporta in Excel", systemImage: "tablecells") }
                     if let u = backupURL { ShareLink(item: u) { Label("Salva un backup", systemImage: "externaldrive") } }
                     Button { importing = true } label: { Label("Ripristina da backup", systemImage: "arrow.counterclockwise") }
                     if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
@@ -79,14 +80,30 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Section("Notifiche") {
-                    Text("Avvisi quando raggiungi l'80% e il 100% del disponibile e dei limiti per categoria.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                Section {
+                    Toggle(isOn: $budgetAlert) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Avviso la sera")
+                            Text("Alle 21, solo se oggi hai superato il budget giornaliero").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle(isOn: $weeklySummary) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Riepilogo della domenica")
+                            Text("Alle 19: quanto hai speso nella settimana").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Notifiche")
+                } footer: {
+                    Text("Avvisi anche quando raggiungi l'80% e il 100% del disponibile e dei limiti per categoria.")
                 }
             }
             .navigationTitle("Altro")
-            .onAppear { csvURL = makeCSV(ctx); backupURL = makeBackup(ctx) }
+            .onAppear { backupURL = makeBackup(ctx) }
             .onChange(of: reminderOn) { _, v in scheduleReminder(on: v, hour: reminderHour) }
+            .onChange(of: budgetAlert) { _, _ in scheduleSmartNotifications(ctx) }
+            .onChange(of: weeklySummary) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: reminderHour) { _, h in if reminderOn { scheduleReminder(on: true, hour: h) } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
                 if case .success(let u) = r { pickedURL = u; confirmRestore = true }

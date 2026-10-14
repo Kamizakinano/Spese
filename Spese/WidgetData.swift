@@ -1,9 +1,10 @@
 import SwiftData
 import WidgetKit
 
-/// Ricalcola i numeri del widget dai dati dell'app e chiede a iOS di aggiornarlo.
+/// Ricalcola i numeri del widget dai dati dell'app e chiede a iOS di aggiornarlo (e rifà gli avvisi).
 @MainActor
 func updateWidgetSnapshot(_ ctx: ModelContext) {
+    scheduleSmartNotifications(ctx)   // gli avvisi della sera e della domenica seguono gli stessi dati
     let all = (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []
     let account = (try? ctx.fetch(FetchDescriptor<Account>()))?.first
     guard let account else { return }
