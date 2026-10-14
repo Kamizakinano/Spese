@@ -36,6 +36,8 @@ struct AddExpenseView: View {
     @State private var photoItem: PhotosPickerItem?
     @State private var showScanner = false
     @State private var scanMessage = ""
+    @State private var receipt: Data?
+    @State private var showReceipt = false
     @State private var error = ""
     @State private var askRefund: Double?   // nuova cifra restituita da confermare
     @FocusState private var focus: Bool
@@ -113,9 +115,21 @@ struct AddExpenseView: View {
                         }
                     }
                 }
-                if editing == nil && !isPlan {
+                if !isPlan { billSection }
+                if !isPlan {
                     Section("Scontrino") {
-                        Button { showScanner = true } label: { Label("Fotografa lo scontrino", systemImage: "camera") }
+                        if let receipt, let img = UIImage(data: receipt) {
+                            Button { showReceipt = true } label: {
+                                Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .accessibilityLabel("Foto dello scontrino, tocca per ingrandire")
+                            Button("Rimuovi la foto", role: .destructive) { self.receipt = nil }
+                        }
+                        Button { showScanner = true } label: {
+                            Label(receipt == nil ? "Fotografa lo scontrino" : "Rifai la foto", systemImage: "camera")
+                        }
                         PhotosPicker(selection: $photoItem, matching: .images) {
                             Label("Scegli dalla libreria", systemImage: "photo")
                         }
@@ -149,8 +163,27 @@ struct AddExpenseView: View {
             .fullScreenCover(isPresented: $showScanner) {
                 DocumentScanner { imgs in Task { await scan(imgs) } }.ignoresSafeArea()
             }
+            .sheet(isPresented: $showReceipt) {
+                if let receipt, let img = UIImage(data: receipt) { ReceiptViewer(image: img) }
+            }
         }
         .presentationDetents([.large])
+    }
+
+    /// Bollette: confronto con le volte precedenti dello stesso fornitore.
+    @ViewBuilder private var billSection: some View {
+        let hist = billHistory(note: note, category: catName, in: all, excluding: editing)
+        if let a = parseAmount(amountText), a > 0, let change = billChange(a, previous: hist.first?.amount) {
+            Section("Confronto con le bollette precedenti") {
+                Text(abs(change) < 0.5 ? "Uguale alla bolletta precedente"
+                     : "\(change > 0 ? "+" : "−") \(Int(abs(change).rounded())) % rispetto alla bolletta precedente")
+                    .bold().foregroundStyle(change > 0.5 ? Color.orange : Theme.accent)
+                ForEach(hist.reversed()) { e in
+                    LabeledContent(e.date.formatted(.dateTime.month(.abbreviated).year()), value: eur(e.amount))
+                }
+                LabeledContent("Questa", value: eur(a)).bold()
+            }
+        }
     }
 
     @ViewBuilder private var planSection: some View {
@@ -194,6 +227,7 @@ struct AddExpenseView: View {
             amountText = e.needsAmount ? "" : amountString(e.amount); catName = e.categoryRaw; date = e.date; note = e.note; tag = e.tag
             shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? amountString(e.owedAmount) : ""
             method = e.method
+            receipt = e.receipt
         } else {
             date = defaultDate
             method = lastMethod
@@ -204,6 +238,11 @@ struct AddExpenseView: View {
     }
 
     private func scan(_ images: [UIImage]) async {
+        // La foto resta salvata nella spesa.
+        let first = images.first
+        receipt = await Task.detached { compressReceipt(first) }.value
+        // Modificando una spesa che ha già l'importo, la foto non lo cambia.
+        if editing != nil && !amountText.isEmpty { scanMessage = "Foto salvata."; return }
         scanMessage = "Leggo lo scontrino…"
         let found: Double? = await Task.detached { readReceiptAmount(images) }.value
         if let v = found {
@@ -245,9 +284,11 @@ struct AddExpenseView: View {
             e.owedAmount = owed; e.owedBy = owed > 0 ? (by.isEmpty ? e.owedBy : by) : by; e.method = method
             e.needsAmount = false
             if owed == 0 { e.settled = false }
+            if e.receipt != receipt { e.receipt = receipt }
         } else {
             let e = Expense(amount: a, categoryName: catName, date: date, note: note)
             e.tag = t; e.owedAmount = owed; e.owedBy = by; e.method = method
+            e.receipt = receipt
             ctx.insert(e)
         }
         lastMethod = method
