@@ -8,6 +8,7 @@ let budgetAlertKey = "budgetAlertOn"
 let weeklySummaryKey = "weeklySummaryOn"
 private let budgetAlertID = "budget-sera"
 private let weeklySummaryID = "riepilogo-domenica"
+private let cashCheckID = "controllo-contanti"
 
 /// Testo dell'avviso delle 21: nil se oggi si è rimasti nel budget.
 /// `budget` è il budget giornaliero di stamattina, `tomorrow` quello che resterà da domani.
@@ -50,7 +51,7 @@ func weeklySummaryText(_ expenses: [Expense], now: Date) -> (title: String, body
 @MainActor
 func scheduleSmartNotifications(_ ctx: ModelContext, now: Date = Date()) {
     let center = UNUserNotificationCenter.current()
-    center.removePendingNotificationRequests(withIdentifiers: [budgetAlertID, weeklySummaryID])
+    center.removePendingNotificationRequests(withIdentifiers: [budgetAlertID, weeklySummaryID, cashCheckID])
     let defaults = UserDefaults.standard
     let all = (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []
     let trips = (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []
@@ -69,13 +70,24 @@ func scheduleSmartNotifications(_ ctx: ModelContext, now: Date = Date()) {
         let today = all.filter { $0.paidByMe && cal.isDate($0.date, inSameDayAs: now) }
         let upcoming = all.filter { $0.paidByMe && $0.date >= endOfToday && $0.date < p.end }.reduce(0) { $0 + $1.myAmount }
         let days = max(daysLeft(until: p.end, from: now), 1)
+        let reserve = defaults.double(forKey: dailySaveKey)   // da parte ogni giorno
         // Budget di stamattina: i soldi di adesso più quelli spesi oggi, divisi per i giorni rimasti.
-        let budget = max(available + today.reduce(0) { $0 + $1.amount } - upcoming, 0) / Double(days)
+        let budget = max(available + today.reduce(0) { $0 + $1.amount } - upcoming - reserve * Double(days), 0) / Double(days)
         let spent = statExpenses(today, trips: trips).reduce(0) { $0 + $1.myAmount }
-        let tomorrow = days > 1 ? max(available - upcoming, 0) / Double(days - 1) : nil
+        let tomorrow = days > 1 ? max(available - upcoming - reserve * Double(days - 1), 0) / Double(days - 1) : nil
         if let t = budgetAlertText(spentToday: spent, budget: budget, tomorrow: tomorrow) {
             add(center, id: budgetAlertID, title: t.title, body: t.body, at: at)
         }
+    }
+
+    // Controllo contanti: domenica alle 10, se non è già stato fatto.
+    if defaults.object(forKey: cashCheckOnKey) as? Bool ?? true {
+        let sunday = cal.date(byAdding: .day, value: 6, to: weekRange(now).start) ?? now
+        let last = defaults.object(forKey: cashCheckLastKey) as? Date ?? now
+        var at = cal.date(bySettingHour: 10, minute: 0, second: 0, of: sunday) ?? sunday
+        if at <= now || last >= cal.startOfDay(for: sunday) { at = cal.date(byAdding: .day, value: 7, to: at) ?? at }
+        add(center, id: cashCheckID, title: "Controllo contanti",
+            body: "Quanti contanti hai nel portafoglio? Apri Spese e controlla che tornino.", at: at)
     }
 
     if defaults.bool(forKey: weeklySummaryKey) {

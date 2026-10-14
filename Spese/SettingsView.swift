@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("reminderHour") private var reminderHour = 21
     @AppStorage(budgetAlertKey) private var budgetAlert = false
     @AppStorage(weeklySummaryKey) private var weeklySummary = false
+    @AppStorage(cashCheckOnKey) private var cashCheckOn = true
     @State private var backupURL: URL?
     @State private var importing = false
     @State private var confirmRestore = false
@@ -93,6 +94,12 @@ struct SettingsView: View {
                             Text("Alle 19: quanto hai speso nella settimana").font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    Toggle(isOn: $cashCheckOn) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Controllo contanti")
+                            Text("La domenica alle 10: quanti contanti hai nel portafoglio").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Notifiche")
                 } footer: {
@@ -104,6 +111,7 @@ struct SettingsView: View {
             .onChange(of: reminderOn) { _, v in scheduleReminder(on: v, hour: reminderHour) }
             .onChange(of: budgetAlert) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: weeklySummary) { _, _ in scheduleSmartNotifications(ctx) }
+            .onChange(of: cashCheckOn) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: reminderHour) { _, h in if reminderOn { scheduleReminder(on: true, hour: h) } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
                 if case .success(let u) = r { pickedURL = u; confirmRestore = true }

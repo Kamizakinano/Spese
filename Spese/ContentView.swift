@@ -40,6 +40,8 @@ struct ContentView: View {
             if lockOn { authenticate() } else { locked = false }
             seed()
             generateAll()
+            applyDailySavings(ctx)
+            if UserDefaults.standard.object(forKey: cashCheckLastKey) == nil { UserDefaults.standard.set(Date(), forKey: cashCheckLastKey) }
             if !accounts.isEmpty { runAutoBackup(ctx) }
             updateWidgetSnapshot(ctx)
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
@@ -52,6 +54,7 @@ struct ContentView: View {
         .onChange(of: phase) { _, p in
             if p == .active {
                 generateAll()
+                applyDailySavings(ctx)
                 if !accounts.isEmpty { runAutoBackup(ctx) }
                 if lockOn && locked { authenticate() }
                 updateWidgetSnapshot(ctx)
@@ -131,6 +134,11 @@ struct HomeView: View {
     @Query private var payments: [TripPayment]
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
     @Query(sort: \Trip.startDate, order: .reverse) private var trips: [Trip]
+    @Query private var recurringAll: [Recurring]
+    @AppStorage(dailySaveKey) private var dailySave = 0.0
+    @AppStorage(forecastDailyKey) private var forecastDaily = true
+    @State private var cashCheck = false
+    @State private var cashCheckSeen = Date()
 
     @State private var month = Date()
     @State private var showAdd = false
@@ -240,7 +248,7 @@ struct HomeView: View {
                             Image(systemName: "calendar.badge.clock").opacity(0.75)
                         }
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(eur(max(totalAvailable - upcomingTotal(before: p.end), 0) / Double(days))).font(.title3.bold())
+                            Text(eur(max(totalAvailable - upcomingTotal(before: p.end) - dailySave * Double(days), 0) / Double(days))).font(.title3.bold())
                             Text("/ giorno").font(.subheadline).opacity(0.75)
                         }.lineLimit(1).minimumScaleFactor(0.7)
                         Text("Fino al \(endText) • ancora \(days) \(days == 1 ? "giorno" : "giorni")")
@@ -297,6 +305,31 @@ struct HomeView: View {
                 Section { hero }
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     .listRowBackground(Color.clear)
+
+                // Prossimi 30 giorni: il punto più basso del saldo della carta.
+                if isCurrentMonth && !accounts.isEmpty {
+                    Section {
+                        NavigationLink { Prossimi30View() } label: {
+                            Prossimi30Tile(card: left,
+                                           planned: plannedMoves(expenses: all, recurring: recurringAll, account: accounts.first),
+                                           perDay: (forecastDaily ? dailyCardAverage(all, recurringNames: Set(recurringAll.map(\.name))) : 0) + dailySave)
+                        }
+                    }
+                }
+
+                // Controllo contanti della domenica.
+                if isCurrentMonth && cashCheckDue(last: UserDefaults.standard.object(forKey: cashCheckLastKey) as? Date, now: cashCheckSeen) {
+                    Section {
+                        Button { cashCheck = true } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Controlla i contanti").bold().foregroundStyle(.primary)
+                                    Text("Per l'app hai \(eur(cashNow)) nel portafoglio: è giusto?").font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: { Image(systemName: "banknote").foregroundStyle(Theme.accent) }
+                        }
+                    }
+                }
 
                 let pending = all.filter(\.needsAmount)
                 if !pending.isEmpty {
@@ -500,6 +533,7 @@ struct HomeView: View {
             }
             .navigationTitle("Le mie spese").navigationBarTitleDisplayMode(.inline)
             .sheet(item: $tripAdding) { TripExpenseEditor(trip: $0, editing: nil) }
+            .sheet(isPresented: $cashCheck, onDismiss: { cashCheckSeen = Date() }) { CashCheckView() }
             // Avvisi del giorno delle spese "In arrivo", rifatti a ogni modifica.
             .task(id: upcomingAll.map { "\($0.date.timeIntervalSince1970)|\($0.amount)|\($0.note)" }) { await scheduleUpcomingReminders(ctx) }
             .searchable(text: $search, prompt: "Cerca spese")

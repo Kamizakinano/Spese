@@ -265,6 +265,7 @@ struct SavingsView: View {
     @Query private var goals: [Goal]
     @State private var editingGoal: Goal?
     @State private var addGoal = false
+    @AppStorage(dailySaveKey) private var dailySave = 0.0
 
     private var total: Double { incomes.reduce(0) { $0 + $1.saved } + moves.reduce(0) { $0 + $1.amount } }
     private var free: Double { total - goals.reduce(0) { $0 + $1.saved } }
@@ -297,6 +298,16 @@ struct SavingsView: View {
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
+
+                Section {
+                    NavigationLink { DailySaveView() } label: {
+                        LabeledContent {
+                            Text(dailySave > 0 ? "\(eur(dailySave)) al giorno" : "Spento")
+                        } label: {
+                            Label("Da parte ogni giorno", systemImage: "calendar.badge.plus")
+                        }
+                    }
+                }
 
                 Section {
                     ForEach(goals) { g in
