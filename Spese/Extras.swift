@@ -153,7 +153,7 @@ struct AddExpenseView: View {
                 }
                 Button("Annulla", role: .cancel) { askRefund = nil }
             }
-            .onAppear(perform: load)
+            .onAppear { load(); if editing == nil { SpendLocation.shared.refresh() } }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 Task {
@@ -289,6 +289,10 @@ struct AddExpenseView: View {
             let e = Expense(amount: a, categoryName: catName, date: date, note: note)
             e.tag = t; e.owedAmount = owed; e.owedBy = by; e.method = method
             e.receipt = receipt
+            // Mappa delle spese: dove sei adesso (solo se l'hai accesa).
+            if UserDefaults.standard.bool(forKey: spendMapKey), let l = SpendLocation.shared.recent {
+                e.latitude = l.coordinate.latitude; e.longitude = l.coordinate.longitude
+            }
             ctx.insert(e)
         }
         lastMethod = method
@@ -539,7 +543,8 @@ struct Backup: Codable {
         var rate: Double? = nil; var paidBy: String? = nil; var splitJSON: String? = nil
         var needsAmount: Bool? = nil; var settledMethod: String? = nil; var refundKey: String? = nil
         var planID: String? = nil; var planName: String? = nil; var planProvider: String? = nil
-        var planIndex: Int? = nil; var planCount: Int? = nil; var planTotal: Double? = nil }
+        var planIndex: Int? = nil; var planCount: Int? = nil; var planTotal: Double? = nil
+        var latitude: Double? = nil; var longitude: Double? = nil }
     struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
         var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
     struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
@@ -580,7 +585,8 @@ func backupData(_ ctx: ModelContext) -> Data? {
                                    rate: x.rate, paidBy: x.paidBy, splitJSON: x.splitJSON,
                                    needsAmount: x.needsAmount, settledMethod: x.settledMethod, refundKey: x.refundKey,
                                    planID: x.planID, planName: x.planName, planProvider: x.planProvider,
-                                   planIndex: x.planIndex, planCount: x.planCount, planTotal: x.planTotal))
+                                   planIndex: x.planIndex, planCount: x.planCount, planTotal: x.planTotal,
+                                   latitude: x.latitude, longitude: x.longitude))
     }
     for x in all(Income.self) {
         b.incomes.append(Backup.I(amount: x.amount, saved: x.saved, kind: x.kind, date: x.date, note: x.note, refundKey: x.refundKey))
@@ -696,6 +702,7 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
         x.needsAmount = e.needsAmount ?? false; x.settledMethod = e.settledMethod ?? ""; x.refundKey = e.refundKey ?? ""
         x.planID = e.planID ?? ""; x.planName = e.planName ?? ""; x.planProvider = e.planProvider ?? ""
         x.planIndex = e.planIndex ?? 0; x.planCount = e.planCount ?? 0; x.planTotal = e.planTotal ?? 0
+        x.latitude = e.latitude ?? 0; x.longitude = e.longitude ?? 0
         ctx.insert(x)
     }
     for i in b.incomes {

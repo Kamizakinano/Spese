@@ -139,6 +139,7 @@ struct HomeView: View {
     @AppStorage(forecastDailyKey) private var forecastDaily = true
     @State private var cashCheck = false
     @State private var cashCheckSeen = Date()
+    @AppStorage(yearRecapKey) private var yearRecapOn = false
 
     @State private var month = Date()
     @State private var showAdd = false
@@ -313,6 +314,15 @@ struct HomeView: View {
                             Prossimi30Tile(card: left,
                                            planned: plannedMoves(expenses: all, recurring: recurringAll, account: accounts.first),
                                            perDay: (forecastDaily ? dailyCardAverage(all, recurringNames: Set(recurringAll.map(\.name))) : 0) + dailySave)
+                        }
+                    }
+                }
+
+                // Il tuo anno: a fine dicembre.
+                if yearRecapOn, isCurrentMonth, let y = yearRecapSeason(Date()) {
+                    Section {
+                        NavigationLink { YearRecapView(year: y) } label: {
+                            Label("È pronto il tuo \(String(y)) in Spese", systemImage: "sparkles").bold()
                         }
                     }
                 }

@@ -15,6 +15,8 @@ struct StatsView: View {
     @Query private var cashMoves: [CashMove]
     @Query private var accounts: [Account]
     @Query private var payments: [TripPayment]
+    @AppStorage(yearRecapKey) private var yearRecapOn = false
+    @AppStorage(spendMapKey) private var spendMapOn = false
 
     private let cal = Calendar.current
 
@@ -117,6 +119,8 @@ struct StatsView: View {
                     NavigationLink { SpendingCalendarView() } label: { Label("Calendario delle spese", systemImage: "calendar") }
                     NavigationLink { SubscriptionsView() } label: { Label("Abbonamenti", systemImage: "play.rectangle.on.rectangle") }
                     NavigationLink { TagsView() } label: { Label("Totale per viaggio o tag", systemImage: "tag") }
+                    if yearRecapOn { NavigationLink { YearRecapView() } label: { Label("Il tuo anno in Spese", systemImage: "sparkles") } }
+                    if spendMapOn { NavigationLink { SpendMapView() } label: { Label("Dove spendi", systemImage: "map") } }
                 }
             }
             .navigationTitle("Statistiche")
