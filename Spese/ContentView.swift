@@ -319,8 +319,12 @@ struct HomeView: View {
                             let n = daysLeft(until: e.date)
                             Button { editing = e } label: {
                                 HStack(spacing: 12) {
-                                    Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(l.color)
-                                        .frame(width: 42, height: 42).background(l.color.opacity(0.14), in: Circle())
+                                    if e.planProvider.isEmpty {
+                                        Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(l.color)
+                                            .frame(width: 42, height: 42).background(l.color.opacity(0.14), in: Circle())
+                                    } else {
+                                        ProviderLogo(provider: e.planProvider, size: 42)
+                                    }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
                                         Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(n == 1 ? "domani" : "tra \(n) giorni")" + (e.planProvider.isEmpty ? "" : " · \(e.planProvider)"))
@@ -397,26 +401,30 @@ struct HomeView: View {
                         .frame(height: 220).padding(.vertical, 8)
                         ForEach(byCat) { i in
                             let share = total > 0 ? i.total / total : 0
-                            HStack(spacing: 12) {
-                                Image(systemName: i.icon).font(.body).foregroundStyle(i.color)
-                                    .frame(width: 40, height: 40)
-                                    .background(i.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
-                                    .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(i.color.opacity(0.7), lineWidth: 1.5))
-                                Text(i.name).foregroundStyle(i.color).lineLimit(1).minimumScaleFactor(0.8)
-                                Spacer(minLength: 6)
-                                Text(eur(i.total)).lineLimit(1)
-                                VStack(alignment: .trailing, spacing: 3) {
-                                    Text("\(Int((share * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary)
-                                    ZStack(alignment: .leading) {
-                                        Capsule().fill(Color.secondary.opacity(0.18))
-                                        Capsule().fill(i.color).frame(width: 46 * share)
-                                    }.frame(width: 46, height: 4)
+                            // Toccando la categoria si aprono tutte le sue spese del mese.
+                            NavigationLink { CategoryExpensesView(category: i.name, month: month) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: i.icon).font(.body).foregroundStyle(i.color)
+                                        .frame(width: 40, height: 40)
+                                        .background(i.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+                                        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(i.color.opacity(0.7), lineWidth: 1.5))
+                                    Text(i.name).foregroundStyle(i.color).lineLimit(1).minimumScaleFactor(0.8)
+                                    Spacer(minLength: 6)
+                                    Text(eur(i.total)).lineLimit(1)
+                                    VStack(alignment: .trailing, spacing: 3) {
+                                        Text("\(Int((share * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary)
+                                        ZStack(alignment: .leading) {
+                                            Capsule().fill(Color.secondary.opacity(0.18))
+                                            Capsule().fill(i.color).frame(width: 46 * share)
+                                        }.frame(width: 46, height: 4)
+                                    }
                                 }
                             }
                             // Pagamenti a rate: quanto con PayPal, quanto con Klarna…
                             if i.name == installmentCategory {
                                 ForEach(installmentProviderTotals(statMonth), id: \.name) { p in
-                                    HStack {
+                                    HStack(spacing: 8) {
+                                        ProviderLogo(provider: p.name, size: 22)
                                         Text(p.name).font(.subheadline).foregroundStyle(.secondary)
                                         Spacer()
                                         Text(eur(p.total)).font(.subheadline).foregroundStyle(.secondary)
@@ -451,8 +459,12 @@ struct HomeView: View {
                     ForEach(shown) { e in
                         let l = look(e.categoryRaw)
                         HStack(spacing: 12) {
-                            Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(.white)
-                                .frame(width: 42, height: 42).background(l.color, in: Circle())
+                            if e.planProvider.isEmpty {
+                                Image(systemName: l.icon).font(.body.weight(.semibold)).foregroundStyle(.white)
+                                    .frame(width: 42, height: 42).background(l.color, in: Circle())
+                            } else {
+                                ProviderLogo(provider: e.planProvider, size: 42)
+                            }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(e.note.isEmpty ? e.categoryRaw : e.note).lineLimit(1)
                                 Text(rowDetail(e))
