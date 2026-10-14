@@ -145,6 +145,7 @@ struct HomeView: View {
     @State private var filterCat = ""
     @State private var filterMethod = ""
     @State private var editing: Expense?
+    @State private var tripAdding: Trip?
 
     /// Spese del mese mostrato, fino a oggi (quelle con data futura sono "in arrivo").
     private var expenses: [Expense] {
@@ -338,15 +339,13 @@ struct HomeView: View {
                     }
                 }
 
+                // Riquadro del viaggio: compare da mezzanotte del primo giorno fino alla fine dell'ultimo.
                 if let t = activeTrip(trips) {
                     Section {
-                        NavigationLink { TripDetailView(trip: t) } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("In viaggio: \(t.name)").bold()
-                                    Text("Tocca per le spese del viaggio" + (t.isForeign ? " in \(t.currency)" : "")).font(.caption).foregroundStyle(.secondary)
-                                }
-                            } icon: { Image(systemName: "airplane.departure").foregroundStyle(Theme.accent) }
+                        NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
+                            .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Button { tripAdding = t } label: {
+                            Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
                         }
                     }
                 }
@@ -458,12 +457,20 @@ struct HomeView: View {
                                 Text(e.note.isEmpty ? e.categoryRaw : e.note).lineLimit(1)
                                 Text(rowDetail(e))
                                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                if let t = trips.first(where: { $0.uid == e.tripID }) { TripBadge(name: t.name) }
                                 if e.owedAmount > 0 && e.tripID.isEmpty { OwedBadge(expense: e) }
                             }
                             Spacer()
-                            Text(e.needsAmount ? "Da completare" : eur(e.amount))
-                                .font(e.needsAmount ? .caption.bold() : .body.bold())
-                                .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(e.needsAmount ? "Da completare" : eur(e.amount))
+                                    .font(e.needsAmount ? .caption.bold() : .body.bold())
+                                    .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
+                                // Spesa all'estero: anche l'importo nella valuta locale.
+                                if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
+                                    Text(e.originalAmount.formatted(.currency(code: e.originalCurrency)))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { editing = e }
@@ -471,6 +478,7 @@ struct HomeView: View {
                 }
             }
             .navigationTitle("Le mie spese").navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $tripAdding) { TripExpenseEditor(trip: $0, editing: nil) }
             // Avvisi del giorno delle spese "In arrivo", rifatti a ogni modifica.
             .task(id: upcomingAll.map { "\($0.date.timeIntervalSince1970)|\($0.amount)|\($0.note)" }) { await scheduleUpcomingReminders(ctx) }
             .searchable(text: $search, prompt: "Cerca spese")
@@ -604,7 +612,6 @@ struct HomeView: View {
         var s = "\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(e.categoryRaw)"
         if !e.tag.isEmpty { s += " · #\(e.tag)" }
         if e.isCash { s += " · contanti" }
-        if let t = trips.first(where: { $0.uid == e.tripID }) { s += " · ✈︎ \(t.name)" }
         if !e.paidByMe { s += " · pagato da \(e.paidBy)" }
         return s
     }

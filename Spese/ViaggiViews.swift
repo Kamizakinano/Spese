@@ -503,3 +503,47 @@ struct TripExpenseEditor: View {
         dismiss()
     }
 }
+
+// MARK: - Viaggio in Home
+
+let tripBlue = Color(hex: "2D7FB8")
+let tripBlueDark = Color(hex: "1B5C8C")
+
+/// Etichetta azzurra delle spese di un viaggio nell'elenco della Home.
+struct TripBadge: View {
+    let name: String
+    var body: some View {
+        Label(name, systemImage: "airplane")
+            .font(.caption).foregroundStyle(tripBlue).lineLimit(1)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(tripBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// Riquadro del viaggio in corso: giorno, speso e budget.
+struct TripHomeCard: View {
+    let trip: Trip
+    let expenses: [Expense]
+
+    var body: some View {
+        let mine = expenses.filter { $0.tripID == trip.uid }.reduce(0) { $0 + $1.myAmount }
+        let cal = Calendar.current
+        let total = (cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: trip.endDate)).day ?? 0) + 1
+        let today = min((cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: Date())).day ?? 0) + 1, total)
+        VStack(alignment: .leading, spacing: 8) {
+            Label(trip.name, systemImage: "airplane").font(.headline)
+            Text("\(dayText(trip.startDate)) – \(dayText(trip.endDate)) · giorno \(today) di \(total)").font(.caption).opacity(0.85)
+            if trip.budget > 0 {
+                ProgressView(value: min(mine, trip.budget), total: trip.budget).tint(.white)
+                HStack {
+                    Text("Speso **\(eur(mine))**")
+                    Spacer()
+                    Text(mine <= trip.budget ? "Restano \(eur(trip.budget - mine))" : "Budget superato di \(eur(mine - trip.budget))")
+                }.font(.caption)
+            } else {
+                Text("Speso **\(eur(mine))**").font(.caption)
+            }
+        }
+        .foregroundStyle(.white).padding(.vertical, 4)
+    }
+}
