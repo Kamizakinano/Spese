@@ -92,20 +92,42 @@ func installmentProviderTotals(_ expenses: [Expense]) -> [(name: String, total: 
         .sorted { $0.total > $1.total }
 }
 
-private func providerColor(_ p: String) -> Color {
+func providerColor(_ p: String) -> Color {
     switch p {
-    case "PayPal": return Color(hex: "1F5FBF")
-    case "Klarna": return Color(hex: "D9488B")
+    case "PayPal": return Color(hex: "003087")
+    case "Klarna": return Color(hex: "E0669B")
     default: return Color(hex: "0E7C86")
     }
 }
 
-private struct ProviderBadge: View {
+/// Logo di PayPal e Klarna disegnato con i colori del marchio (le due P blu, la K. su rosa).
+struct ProviderLogo: View {
     let provider: String
+    var size: CGFloat = 38
+
     var body: some View {
-        Text(provider == "PayPal" ? "PP" : String(provider.prefix(1)))
-            .font(.footnote.weight(.heavy)).foregroundStyle(.white)
-            .frame(width: 38, height: 38).background(providerColor(provider), in: Circle())
+        switch provider {
+        case "PayPal":
+            ZStack {
+                Circle().fill(.white)
+                Circle().strokeBorder(Color(hex: "D6E2F0"), lineWidth: 1)
+                Text("P").font(.system(size: size * 0.62, weight: .heavy)).italic()
+                    .foregroundStyle(Color(hex: "009CDE")).offset(x: size * 0.07, y: size * 0.05)
+                Text("P").font(.system(size: size * 0.62, weight: .heavy)).italic()
+                    .foregroundStyle(Color(hex: "003087"))
+            }
+            .frame(width: size, height: size)
+            .accessibilityLabel("PayPal")
+        case "Klarna":
+            Text("K.").font(.system(size: size * 0.48, weight: .black)).foregroundStyle(.black)
+                .frame(width: size, height: size)
+                .background(Color(hex: "FFA8CD"), in: Circle())
+                .accessibilityLabel("Klarna")
+        default:
+            Image(systemName: "calendar.badge.clock").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: size, height: size).background(providerColor(provider), in: Circle())
+                .accessibilityLabel(provider)
+        }
     }
 }
 
@@ -154,7 +176,7 @@ private struct PlanRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                ProviderBadge(provider: plan.provider)
+                ProviderLogo(provider: plan.provider)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plan.name).bold().lineLimit(1)
                     Text("\(plan.provider) · \(eur(plan.total)) in \(plan.count) rate").font(.caption).foregroundStyle(.secondary)
@@ -198,7 +220,9 @@ struct InstallmentDetailView: View {
                         .onSubmit { updateInstallmentPlan(p.rates, name: nameText, provider: p.provider) }
                     HStack {
                         ForEach(installmentProviders, id: \.self) { v in
-                            Button(v) { updateInstallmentPlan(p.rates, name: nameText, provider: v) }
+                            Button { updateInstallmentPlan(p.rates, name: nameText, provider: v) } label: {
+                                HStack(spacing: 6) { ProviderLogo(provider: v, size: 20); Text(v) }
+                            }
                                 .buttonStyle(.bordered).tint(p.provider == v ? Theme.accent : .gray)
                         }
                     }

@@ -158,7 +158,8 @@ struct AddExpenseView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
                     ForEach(installmentProviders, id: \.self) { p in
-                        Button(p) { provider = p }.buttonStyle(.bordered).tint(provider == p ? Theme.accent : .gray)
+                        Button { provider = p } label: { HStack(spacing: 6) { ProviderLogo(provider: p, size: 20); Text(p) } }
+                            .buttonStyle(.bordered).tint(provider == p ? Theme.accent : .gray)
                     }
                 }
             }
