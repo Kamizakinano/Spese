@@ -12,6 +12,8 @@ struct SettingsView: View {
     @AppStorage(budgetAlertKey) private var budgetAlert = false
     @AppStorage(weeklySummaryKey) private var weeklySummary = false
     @AppStorage(cashCheckOnKey) private var cashCheckOn = true
+    @AppStorage(yearRecapKey) private var yearRecapOn = false
+    @AppStorage(spendMapKey) private var spendMapOn = false
     @State private var backupURL: URL?
     @State private var importing = false
     @State private var confirmRestore = false
@@ -60,6 +62,24 @@ struct SettingsView: View {
                     NavigationLink { OwedView() } label: { Label("Ti devono", systemImage: "person.2") }
                     NavigationLink { DebtsView() } label: { Label("Devo dare", systemImage: "person.crop.circle.badge.minus") }
                     NavigationLink { CardLinkView() } label: { Label("Collega la carta (Apple Pay)", systemImage: "creditcard.and.123") }
+                }
+                Section {
+                    Toggle(isOn: $yearRecapOn) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Il tuo anno in Spese")
+                            Text("Il riassunto dell'anno, in Statistiche e a fine dicembre in Home").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle(isOn: $spendMapOn) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Mappa delle spese")
+                            Text("Ricorda dove fai le spese inserite nell'app").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Funzioni")
+                } footer: {
+                    if spendMapOn { Text("La posizione si usa solo quando inserisci una spesa e resta sul telefono. Le spese di prima non hanno il luogo.") }
                 }
                 Section("Sicurezza e promemoria") {
                     LockToggle()
@@ -112,6 +132,7 @@ struct SettingsView: View {
             .onChange(of: budgetAlert) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: weeklySummary) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: cashCheckOn) { _, _ in scheduleSmartNotifications(ctx) }
+            .onChange(of: spendMapOn) { _, on in if on { SpendLocation.shared.requestPermission() } }
             .onChange(of: reminderHour) { _, h in if reminderOn { scheduleReminder(on: true, hour: h) } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { r in
                 if case .success(let u) = r { pickedURL = u; confirmRestore = true }
