@@ -82,6 +82,7 @@ struct HomeView: View {
     @State private var openMonth: Date?
     @AppStorage(listScaleKey) private var listScale = ListScale.month.rawValue
     @State private var editing: Expense?
+    @State private var editingRecurring: Recurring?
     @State private var tripAdding: Trip?
     @State private var cashCheck = false
     @State private var cashCheckSeen = Date()
@@ -173,7 +174,8 @@ struct HomeView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                .gesture(daySwipe)
+                // Trascinando il dito sulla data o sui giorni si cambia giorno, come con le frecce.
+                .simultaneousGesture(daySwipe)
 
                 Section { ringCard; chips }
                     .listRowSeparator(.hidden)
@@ -234,6 +236,7 @@ struct HomeView: View {
                 else { AddExpenseView(defaultDate: e.date, editing: e) }
             }
             .sheet(item: $tripAdding) { TripExpenseEditor(trip: $0, editing: nil) }
+            .sheet(item: $editingRecurring) { r in RecurringEditor(editing: r) }
             .sheet(isPresented: $cashCheck, onDismiss: { cashCheckSeen = Date() }) { CashCheckView() }
             .sheet(isPresented: $showPeriod) { PayPeriodEditor() }
             .sheet(isPresented: $showMonths) {
@@ -252,6 +255,20 @@ struct HomeView: View {
             .onAppear(perform: checkEndedPeriod)
             .onChange(of: all.count) { _, _ in checkAlerts() }
         }
+    }
+
+    private func recurringRow(_ r: Recurring) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: r.isSubscription ? "play.rectangle" : "repeat").foregroundStyle(.secondary)
+                .frame(width: 40, height: 40).background(Color.secondary.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.name).lineLimit(1)
+                Text(r.isSubscription ? "Abbonamento" : "Spesa ricorrente").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(eur(r.amount)).bold()
+        }
+        .contentShape(Rectangle())
     }
 
     private var daySwipe: some Gesture {
@@ -374,16 +391,8 @@ struct HomeView: View {
             }
             .onDelete { idx in idx.map { list[$0] }.forEach { deleteExpense($0, ctx: ctx) } }
             ForEach(dayRecurring) { r in
-                HStack(spacing: 12) {
-                    Image(systemName: r.isSubscription ? "play.rectangle" : "repeat").foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40).background(Color.secondary.opacity(0.12), in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.name).lineLimit(1)
-                        Text(r.isSubscription ? "Abbonamento" : "Spesa ricorrente").font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(eur(r.amount)).bold()
-                }
+                Button { editingRecurring = r } label: { recurringRow(r) }
+                    .buttonStyle(.plain)
             }
         } header: {
             HStack {
