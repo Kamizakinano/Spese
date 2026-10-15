@@ -56,9 +56,38 @@ struct AddExpenseView: View {
             Form {
                 Section {
                     TextField("Importo (€)", text: $amountText).keyboardType(.decimalPad).focused($focus)
-                    Picker("Categoria", selection: $catName) {
-                        ForEach(cats) { c in Label(c.name, systemImage: c.icon).tag(c.name) }
+                        .font(.system(size: 34, weight: .bold, design: .rounded)).multilineTextAlignment(.center)
+                        .padding(.vertical, 4)
+                    if !isPlan {
+                        Picker("Pagato con", selection: $method) {
+                            Label("Carta", systemImage: "creditcard").tag("carta")
+                            Label("Contanti", systemImage: "banknote").tag("contanti")
+                        }.pickerStyle(.segmented)
                     }
+                }
+                // Categorie a riquadri: un tocco per scegliere.
+                Section("Categoria") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
+                        ForEach(cats) { c in
+                            let on = catName == c.name
+                            Button { catName = c.name } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: c.icon).font(.title3).foregroundStyle(Color(hex: c.colorHex))
+                                    Text(c.name).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+                                        .minimumScaleFactor(0.8).foregroundStyle(on ? Color.primary : Color.secondary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 58).padding(.vertical, 4)
+                                .background(Color(hex: c.colorHex).opacity(on ? 0.16 : 0.06), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(on ? Color(hex: c.colorHex) : .clear, lineWidth: 2))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(c.name)
+                            .accessibilityAddTraits(on ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                Section {
                     DatePicker(isPlan ? "Prossimo addebito" : "Data", selection: $date, displayedComponents: .date)
                     TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
                     NoteSuggestionsRow(typed: note, expenses: all) { s in
@@ -68,12 +97,6 @@ struct AddExpenseView: View {
                 }
                 if isPlan { planSection }
                 if !isPlan {
-                    Section("Pagamento") {
-                        Picker("Pagato con", selection: $method) {
-                            Text("Carta").tag("carta")
-                            Text("Contanti").tag("contanti")
-                        }.pickerStyle(.segmented)
-                    }
                     Section("Viaggio o tag") {
                         TextField("Tag (es. Roma 2026)", text: $tag)
                         if !knownTags.isEmpty {
