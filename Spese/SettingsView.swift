@@ -88,7 +88,7 @@ struct SettingsView: View {
                 }
                 Section("Dati") {
                     NavigationLink { AutoBackupView() } label: { Label("Backup automatico", systemImage: "icloud.and.arrow.up") }
-                    NavigationLink { ExportView() } label: { Label("Esporta in Excel", systemImage: "tablecells") }
+                    NavigationLink { ExportView() } label: { Label("Esporta (Excel, CSV, PDF)", systemImage: "square.and.arrow.up") }
                     if let u = backupURL { ShareLink(item: u) { Label("Salva un backup", systemImage: "externaldrive") } }
                     Button { importing = true } label: { Label("Ripristina da backup", systemImage: "arrow.counterclockwise") }
                     if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
