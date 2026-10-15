@@ -103,9 +103,13 @@ struct ContentView: View {
     }
 
     private func generateAll() {
+        let expenses = (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []
         for r in (try? ctx.fetch(FetchDescriptor<Recurring>())) ?? [] {
             let due = dueDates(from: r.nextKey, day: r.day)
-            for d in due.dates { ctx.insert(Expense(amount: r.amount, categoryName: r.categoryName, date: d, note: r.name)) }
+            // Se la spesa c'è già (inserita a mano lo stesso giorno) non se ne aggiunge un'altra.
+            for d in due.dates where !recurringCovered(name: r.name, on: d, expenses: expenses) {
+                ctx.insert(Expense(amount: r.amount, categoryName: r.categoryName, date: d, note: r.name))
+            }
             if !due.dates.isEmpty { r.nextKey = due.next }
         }
         if let a = (try? ctx.fetch(FetchDescriptor<Account>()))?.first, a.salaryAmount > 0, !a.salaryNextKey.isEmpty {

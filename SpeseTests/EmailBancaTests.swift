@@ -49,4 +49,53 @@ final class EmailBancaTests: XCTestCase {
         XCTAssertTrue(try recordBankEmail(e, ctx: ctx).contains("ignorata"), "La stessa spesa non si registra due volte")
         XCTAssertEqual(try ctx.fetch(FetchDescriptor<Expense>()).filter { $0.note == shop }.count, 1)
     }
+
+    @MainActor
+    func testMutuoSpostatoAlGiornoDellAddebito() throws {
+        let ctx = SharedStore.container.mainContext
+        let name = "Mutuo prova \(UUID().uuidString.prefix(6))"
+        let amount = 423.19 + Double(Int.random(in: 1...900)) / 100   // importo unico per la prova
+        let r = Recurring(name: name, amount: amount, categoryName: "Casa", day: 1, nextKey: "2031-02")
+        ctx.insert(r)
+        // La spesa del mese è già stata inserita sabato 1 febbraio 2031.
+        let sat = day(2031, 2, 1)
+        ctx.insert(Expense(amount: amount, categoryName: "Casa", date: sat, note: name))
+        defer {
+            for x in (try? ctx.fetch(FetchDescriptor<Expense>())) ?? [] where x.note == name { ctx.delete(x) }
+            ctx.delete(r)
+            try? ctx.save()
+        }
+        let mon = day(2031, 2, 3)
+        let msg = matchRecurringPayment(amount: amount, when: mon, ctx: ctx)
+        XCTAssertTrue(msg?.contains("Spostato") ?? false, msg ?? "nessun messaggio")
+        let list = try ctx.fetch(FetchDescriptor<Expense>()).filter { $0.note == name }
+        XCTAssertEqual(list.count, 1, "Niente seconda spesa")
+        XCTAssertTrue(Calendar.current.isDate(list[0].date, inSameDayAs: mon), "Spostata al giorno dell'addebito")
+    }
+
+    @MainActor
+    func testRicorrenteNonAncoraInserita() throws {
+        let ctx = SharedStore.container.mainContext
+        let name = "Affitto prova \(UUID().uuidString.prefix(6))"
+        let amount = 611.0 + Double(Int.random(in: 1...900)) / 100
+        let r = Recurring(name: name, amount: amount, categoryName: "Casa", day: 1, nextKey: "2031-03")
+        ctx.insert(r)
+        defer {
+            for x in (try? ctx.fetch(FetchDescriptor<Expense>())) ?? [] where x.note == name { ctx.delete(x) }
+            ctx.delete(r)
+            try? ctx.save()
+        }
+        XCTAssertNotNil(matchRecurringPayment(amount: amount, when: day(2031, 3, 3), ctx: ctx))
+        XCTAssertEqual(try ctx.fetch(FetchDescriptor<Expense>()).filter { $0.note == name }.count, 1)
+        XCTAssertEqual(r.nextKey, "2031-04", "Il mese è fatto: non si aggiunge di nuovo")
+        XCTAssertNil(matchRecurringPayment(amount: amount + 50, when: day(2031, 3, 3), ctx: ctx), "Importo diverso: non è la ricorrente")
+    }
+
+    func testRicorrenteGiaInserita() {
+        let d = day(2026, 11, 1)
+        let e = Expense(amount: 423.19, categoryName: "Casa e bollette", date: d, note: "Mutuo ")
+        XCTAssertTrue(recurringCovered(name: "mutuo", on: d, expenses: [e]))
+        XCTAssertFalse(recurringCovered(name: "Mutuo", on: day(2026, 12, 1), expenses: [e]))
+        XCTAssertEqual(nextMonthKey("2026-12"), "2027-01")
+    }
 }

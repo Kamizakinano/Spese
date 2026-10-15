@@ -136,7 +136,10 @@ struct HomeView: View {
     /// Spese ricorrenti e abbonamenti che cadono nel giorno scelto (solo giorni futuri).
     private var dayRecurring: [Recurring] {
         guard isFuture, let end = cal.date(byAdding: .day, value: 1, to: day) else { return [] }
-        return recurringAll.filter { r in monthlyDates(nextKey: r.nextKey, day: r.day, until: end).contains { cal.isDate($0, inSameDayAs: day) } }
+        return recurringAll.filter { r in
+            monthlyDates(nextKey: r.nextKey, day: r.day, until: end).contains { cal.isDate($0, inSameDayAs: day) }
+                && !recurringCovered(name: r.name, on: day, expenses: all)
+        }
     }
     private var spentInPeriod: Double {
         guard let p = period else { return 0 }

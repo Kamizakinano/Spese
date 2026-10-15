@@ -38,6 +38,12 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 ## Cose fatte di recente
 
-2.31 PayPal "Paga a rate" dalle email · 2.32 Home per giorno · 2.33 nuova icona e colore Ardesia · 2.34 esportazione CSV e PDF · 2.35 Home più compatta, "Questa settimana", elenco per Giorno/Settimana/Mese, foto scontrino centrata.
+2.31 PayPal "Paga a rate" dalle email · 2.32 Home per giorno · 2.33 nuova icona e colore Ardesia · 2.34 esportazione CSV e PDF · 2.35 Home più compatta, "Questa settimana", elenco per Giorno/Settimana/Mese, foto scontrino centrata, spese ricorrenti e abbonamenti modificabili, niente doppioni tra ricorrenti e spese inserite a mano (`recurringCovered`), addebito di una ricorrente dall'email della banca spostato al giorno vero (`matchRecurringPayment` in `EmailBanca.swift`, regola generica: stesso importo ±2%, ±6 giorni).
+
+## A che punto siamo
+
+- La **2.35** è sul ramo `claude/home-periodo`. Se l'utente conferma che funziona: PR "Versione 2.35 (già provata, build N) [skip ci]" con squash (N = run_number dell'ultima CI passata del ramo).
+- In attesa: un'**email vera dell'addebito del mutuo** (Intesa Sanpaolo). Quando arriva, controlla che `parseBankEmail` la legga come spesa con importo e data giusti e aggiungi una prova in `SpeseTests/EmailBancaTests.swift`.
+- Se la CI dice "L'app si è chiusa da sola (crash)", leggi le annotazioni: ora contengono il motivo e le righe del codice. È già successo due volte senza cambiare il codice (2.29 e 2.35): un nuovo tentativo è passato.
 
 Idee rimaste in sospeso: barre per categoria nelle Statistiche; versione Android (andrebbe riscritta); rinnovi PayPal da email (l'utente manderà un esempio).

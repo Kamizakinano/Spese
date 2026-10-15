@@ -284,6 +284,7 @@ struct RecurringView: View {
     @Environment(\.modelContext) private var ctx
     @Query private var items: [Recurring]
     @State private var adding = false
+    @State private var editing: Recurring?
 
     var body: some View {
         List {
@@ -292,19 +293,30 @@ struct RecurringView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(items) { r in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(r.name)
-                        Text("\(r.categoryName) · il giorno \(r.day) di ogni mese\(r.isSubscription ? " · abbonamento" : "")").font(.caption).foregroundStyle(.secondary)
+                Button { editing = r } label: {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(r.name).foregroundStyle(.primary)
+                            Text("\(r.categoryName) · il giorno \(r.day) di ogni mese\(r.isSubscription ? " · abbonamento" : "")").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(eur(r.amount)).bold().foregroundStyle(.primary)
+                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
                     }
-                    Spacer()
-                    Text(eur(r.amount)).bold()
                 }
             }.onDelete { i in i.map { items[$0] }.forEach(ctx.delete) }
+            if !items.isEmpty {
+                Section {
+                    HStack { Text("Totale al mese"); Spacer(); Text(eur(items.reduce(0) { $0 + $1.amount })).bold() }
+                } footer: {
+                    Text("Tocca una spesa per modificarla. Scorri a sinistra per cancellarla.")
+                }
+            }
         }
         .navigationTitle("Spese ricorrenti")
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .sheet(isPresented: $adding) { RecurringEditor() }
+        .sheet(item: $editing) { r in RecurringEditor(editing: r) }
     }
 }
 
@@ -318,7 +330,17 @@ struct RecurringEditor: View {
     @State private var day = 1
     /// Aperto da Abbonamenti: l'interruttore "È un abbonamento" parte acceso.
     var asSubscription = false
+    /// La ricorrente da modificare (nil = nuova).
+    var editing: Recurring? = nil
+    @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
     @State private var isSub = false
+    @State private var confirmDelete = false
+
+    /// Le ultime volte che è stata inserita (stesso nome).
+    private var history: [Expense] {
+        guard let r = editing else { return [] }
+        return Array(expenses.filter { $0.note == r.name && $0.date < Ledger.endOfToday }.prefix(4))
+    }
 
     var body: some View {
         NavigationStack {
@@ -330,26 +352,69 @@ struct RecurringEditor: View {
                 }
                 Stepper("Giorno del mese: \(day)", value: $day, in: 1...31)
                 Toggle("È un abbonamento", isOn: $isSub)
+                if let r = editing {
+                    Section {
+                        if let next = nextRenewal(nextKey: r.nextKey, day: day) {
+                            HStack {
+                                Text(next.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized)
+                                Spacer()
+                                Text(eur(parseAmount(amountText) ?? r.amount)).bold()
+                            }
+                        }
+                    } header: { Text("Prossima volta") } footer: {
+                        Text("Le spese già inserite nei mesi passati non cambiano: la modifica vale dalla prossima.")
+                    }
+                    if !history.isEmpty {
+                        Section("Ultime volte") {
+                            ForEach(history) { e in
+                                HStack { Text(e.date.formatted(.dateTime.day().month(.wide))); Spacer(); Text(eur(e.amount)) }
+                            }
+                        }
+                    }
+                    Section {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            Text(r.isSubscription ? "Elimina abbonamento" : "Elimina spesa ricorrente").frame(maxWidth: .infinity)
+                        }
+                    }
+                }
             }
-            .navigationTitle(asSubscription ? "Nuovo abbonamento" : "Nuova ricorrente").navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog("Eliminare \(editing?.name ?? "")? Non verrà più aggiunta ogni mese.", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Elimina", role: .destructive) {
+                    if let r = editing { ctx.delete(r); try? ctx.save(); Task { await scheduleSubscriptionReminders(ctx) } }
+                    dismiss()
+                }
+            }
+            .navigationTitle(editing != nil ? (isSub ? "Modifica abbonamento" : "Modifica ricorrente")
+                             : (asSubscription ? "Nuovo abbonamento" : "Nuova ricorrente"))
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") {
                         let n = name.trimmingCharacters(in: .whitespaces)
                         guard !n.isEmpty, let a = parseAmount(amountText), a > 0 else { return }
-                        let r = Recurring(name: n, amount: a, categoryName: catName, day: day, nextKey: monthKey(Date()))
-                        r.isSubscription = isSub
-                        ctx.insert(r)
+                        if let r = editing {
+                            r.name = n; r.amount = a; r.categoryName = catName; r.day = day; r.isSubscription = isSub
+                        } else {
+                            let r = Recurring(name: n, amount: a, categoryName: catName, day: day, nextKey: monthKey(Date()))
+                            r.isSubscription = isSub
+                            ctx.insert(r)
+                        }
                         try? ctx.save()
-                        if isSub { Task { await scheduleSubscriptionReminders(ctx) } }
+                        Task { await scheduleSubscriptionReminders(ctx) }
                         dismiss()
                     }
                 }
             }
             .onAppear {
-                if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
-                isSub = asSubscription
+                if let r = editing {
+                    name = r.name
+                    amountText = String(format: "%.2f", r.amount).replacingOccurrences(of: ".", with: ",")
+                    catName = r.categoryName; day = r.day; isSub = r.isSubscription
+                } else {
+                    if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
+                    isSub = asSubscription
+                }
             }
         }
     }

@@ -33,6 +33,23 @@ func monthlyDates(nextKey: String, day: Int, until end: Date) -> [Date] {
     return out
 }
 
+/// C'è già una spesa con lo stesso nome della ricorrente in quel giorno (es. il mutuo inserito a mano)?
+/// Allora la ricorrente non si aggiunge, né si conta due volte.
+func recurringCovered(name: String, on day: Date, expenses: [Expense]) -> Bool {
+    let n = name.trimmingCharacters(in: .whitespaces)
+    return expenses.contains {
+        Calendar.current.isDate($0.date, inSameDayAs: day)
+            && $0.note.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(n) == .orderedSame
+    }
+}
+
+/// Il mese dopo una chiave "2026-10" → "2026-11".
+func nextMonthKey(_ key: String) -> String {
+    let p = key.split(separator: "-").compactMap { Int($0) }
+    guard p.count == 2 else { return key }
+    return p[1] == 12 ? String(format: "%04d-01", p[0] + 1) : String(format: "%04d-%02d", p[0], p[1] + 1)
+}
+
 /// Uscite ed entrate note dei prossimi `days` giorni: spese con data futura (carta), rate,
 /// spese ricorrenti e abbonamenti, stipendio automatico.
 func plannedMoves(expenses: [Expense], recurring: [Recurring], account: Account?, now: Date = Date(), days: Int = 30) -> [PlannedMove] {
@@ -43,7 +60,8 @@ func plannedMoves(expenses: [Expense], recurring: [Recurring], account: Account?
         .map { PlannedMove(name: $0.note.isEmpty ? $0.categoryRaw : $0.note, date: $0.date, amount: -$0.amount,
                            icon: $0.planID.isEmpty ? "calendar" : "creditcard") }
     for r in recurring {
-        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end) where d >= from {
+        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end)
+        where d >= from && !recurringCovered(name: r.name, on: d, expenses: expenses) {
             out.append(PlannedMove(name: r.name, date: d, amount: -r.amount, icon: r.isSubscription ? "play.rectangle" : "repeat"))
         }
     }
