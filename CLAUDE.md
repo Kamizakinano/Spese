@@ -42,7 +42,7 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 ## A che punto siamo
 
-- La **2.35** è sul ramo `claude/home-periodo`. Se l'utente conferma che funziona: PR "Versione 2.35 (già provata, build N) [skip ci]" con squash (N = run_number dell'ultima CI passata del ramo).
+- La **2.35** è sul ramo `claude/home-periodo`. Se l'utente conferma che funziona: PR "Versione 2.35 (già provata, build N) [skip ci]" con squash (build 59, già inviata all'utente).
 - In attesa: un'**email vera dell'addebito del mutuo** (Intesa Sanpaolo). Quando arriva, controlla che `parseBankEmail` la legga come spesa con importo e data giusti e aggiungi una prova in `SpeseTests/EmailBancaTests.swift`.
 - Se la CI dice "L'app si è chiusa da sola (crash)", leggi le annotazioni: ora contengono il motivo e le righe del codice. È già successo due volte senza cambiare il codice (2.29 e 2.35): un nuovo tentativo è passato.
 
