@@ -236,7 +236,7 @@ struct Prossimi30Tile: View {
 
     var body: some View {
         let proj = project(start: card, moves: planned, perDay: perDay)
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Prossimi 30 giorni").font(.caption).foregroundStyle(.secondary)
                 if let low = proj.lowest {
@@ -245,12 +245,22 @@ struct Prossimi30Tile: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            Spacer(minLength: 12)
+            // Scala tra il minimo e il massimo: così la linea mostra davvero quanto scende.
+            let values = proj.points.map(\.balance)
+            let lo = values.min() ?? 0, hi = values.max() ?? 0
+            let pad = max((hi - lo) * 0.15, 1)
             Chart(proj.points, id: \.date) { p in
-                LineMark(x: .value("Giorno", p.date), y: .value("Saldo", p.balance)).foregroundStyle(Theme.accent)
+                LineMark(x: .value("Giorno", p.date), y: .value("Saldo", p.balance))
+                    .foregroundStyle(Theme.accent).interpolationMethod(.monotone)
+                if let low = proj.lowest {
+                    PointMark(x: .value("Giorno", low.date), y: .value("Saldo", low.balance))
+                        .foregroundStyle(low.balance < 0 ? Color.red : Theme.accent).symbolSize(24)
+                }
             }
+            .chartYScale(domain: (lo - pad)...(hi + pad))
             .chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(width: 96, height: 36)
+            .frame(width: 104, height: 44)
         }
     }
 }

@@ -78,4 +78,29 @@ final class NovitaOttobreTests: XCTestCase {
         XCTAssertEqual(String(decoding: data.prefix(5), as: UTF8.self), "%PDF-")
         XCTAssertGreaterThan(data.count, 1000)
     }
+
+    func testRigaSenzaCategoriaRipetuta() {
+        XCTAssertEqual(rowDetail("Alimentari", note: "", category: "Alimentari"), "", "Senza nota il titolo è già la categoria")
+        XCTAssertEqual(rowDetail("Alimentari · contanti", note: "", category: "Alimentari"), "contanti")
+        XCTAssertEqual(rowDetail("Alimentari · contanti", note: "Lidl", category: "Alimentari"), "Alimentari · contanti")
+    }
+
+    func testPeriodoElenco() {
+        let g = d(2026, 10, 15)   // giovedì
+        let day = listRange(.day, around: g)
+        XCTAssertEqual(day.end.timeIntervalSince(day.start), 86400, accuracy: 3600)
+        let w = listRange(.week, around: g)
+        XCTAssertEqual(Calendar.current.component(.day, from: w.start), 12, "La settimana parte da lunedì")
+        XCTAssertEqual(Calendar.current.component(.day, from: w.end), 19)
+        let m = listRange(.month, around: g)
+        XCTAssertEqual(Calendar.current.component(.day, from: m.start), 1)
+        XCTAssertEqual(Calendar.current.component(.month, from: m.end), 11)
+    }
+
+    func testConfrontoSettimana() {
+        XCTAssertNil(weekCompareText(this: 50, last: 0))
+        XCTAssertEqual(weekCompareText(this: 82, last: 100), "−18% della scorsa")
+        XCTAssertEqual(weekCompareText(this: 120, last: 100), "+20% della scorsa")
+        XCTAssertEqual(weekCompareText(this: 100, last: 100), "come la scorsa")
+    }
 }
