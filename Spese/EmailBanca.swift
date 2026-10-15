@@ -83,6 +83,15 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
     let cal = Calendar.current
     switch e.kind {
     case .expense:
+        // È una rata di un acquisto a rate (es. l'addebito PayPal)? Si segna pagata, senza una spesa in più.
+        let rates = ((try? ctx.fetch(FetchDescriptor<Expense>())) ?? []).filter {
+            !$0.planID.isEmpty && abs($0.amount - e.amount) < 0.005 && abs($0.date.timeIntervalSince(when)) <= 3 * 86400
+        }
+        if let r = rates.min(by: { abs($0.date.timeIntervalSince(when)) < abs($1.date.timeIntervalSince(when)) }) {
+            if r.date > when { r.date = when }
+            try ctx.save()
+            return "È la rata \(r.planIndex) di \(r.planCount) di \(r.planName): segnata pagata"
+        }
         // Già entrata da Apple Pay (stesso importo, pochi minuti prima o dopo)? Non si conta due volte.
         let near = ((try? ctx.fetch(FetchDescriptor<Expense>())) ?? []).contains {
             abs($0.amount - e.amount) < 0.005 && abs($0.date.timeIntervalSince(when)) < 30 * 60
@@ -127,7 +136,7 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
 /// Azione per l'automazione "Email" di Comandi rapidi: legge l'email della banca e registra il movimento.
 struct AddFromBankEmailIntent: AppIntent {
     static let title: LocalizedStringResource = "Leggi email della banca"
-    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) e registra il movimento in Spese.")
+    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) o di PayPal (rata di Paga a rate) e registra il movimento in Spese.")
     static let openAppWhenRun = false
 
     @Parameter(title: "Oggetto", default: "") var subject: String
@@ -141,6 +150,21 @@ struct AddFromBankEmailIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let excerpt = String((subject + " — " + body).prefix(300))
         let entry = ApplePayLog.begin(amount: excerpt, merchant: "", source: "Email")
+        // Email di PayPal per una rata di "Paga a rate".
+        if let p = parsePayPalInstallmentEmail(subject: subject, body: body) {
+            do {
+                let ctx = SharedStore.container.mainContext
+                let result = try recordPayPalInstallment(p, ctx: ctx)
+                ApplePayLog.finish(entry, result)
+                updateWidgetSnapshot(ctx)
+                runAutoBackup(ctx)
+                notify("PayPal", result)
+            } catch {
+                ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
+                throw error
+            }
+            return .result()
+        }
         guard let e = parseBankEmail(subject: subject, body: body) else {
             // Email della banca che non parla di soldi (avvisi, pubblicità): nessun errore, solo una riga nel registro.
             ApplePayLog.finish(entry, "Non è un movimento: ignorata")
