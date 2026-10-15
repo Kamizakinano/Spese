@@ -174,7 +174,7 @@ struct HomeView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                // Trascinando il dito sulla data o sui giorni si cambia giorno, come con le frecce.
+                // Trascinando il dito sulla data o sui giorni si cambia giorno.
                 .simultaneousGesture(daySwipe)
 
                 Section { ringCard; chips }
@@ -282,18 +282,18 @@ struct HomeView: View {
     }
 
     private var dayHeader: some View {
-        // Un tocco sulla data riporta a oggi. Le frecce stanno sulla stessa riga della data.
+        // Un tocco sulla data riporta a oggi. Le frecce cambiano settimana (stesso giorno), il dito cambia giorno.
         VStack(spacing: 3) {
             HStack {
-                Button { shiftDay(-1) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
-                    .accessibilityLabel("Giorno prima")
+                Button { shiftDay(-7) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Settimana prima")
                 Spacer()
                 Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
                     Text(day.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized).font(.headline).foregroundStyle(.primary)
                 }
                 Spacer()
-                Button { shiftDay(1) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
-                    .accessibilityLabel("Giorno dopo")
+                Button { shiftDay(7) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Settimana dopo")
             }
             Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
                 Text(isToday ? "Oggi" : "Torna a oggi").font(.caption.bold())
