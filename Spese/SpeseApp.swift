@@ -98,13 +98,14 @@ struct SpeseApp: App {
 
 /// Colori scelti in Altro → Aspetto. Il verde è quello di partenza.
 enum AppColor: String, CaseIterable, Identifiable {
-    case verde, blu, rosso, nero, rosa, viola
+    case verde, ardesia, blu, rosso, nero, rosa, viola
     var id: String { rawValue }
     var name: String { rawValue.capitalized }
     /// Colore principale (testi in evidenza, pulsanti, icone), riquadri grandi (dal chiaro allo scuro) e tono chiaro.
     var accent: Color {
         switch self {
         case .verde: return Color(hex: "1D9E75")
+        case .ardesia: return Color(hex: "5D7584")   // il grigio-blu dell'icona
         case .blu: return Color(hex: "2F7FE0")
         case .rosso: return Color(hex: "D64545")
         // Nero col tema chiaro, grigio col tema scuro (così resta leggibile su entrambi gli sfondi).
@@ -116,6 +117,7 @@ enum AppColor: String, CaseIterable, Identifiable {
     var top: Color {
         switch self {
         case .verde: return Color(hex: "1A5E44")
+        case .ardesia: return Color(hex: "5D7584")
         case .blu: return Color(hex: "1E4E8C")
         case .rosso: return Color(hex: "8E2A2A")
         case .nero: return Color(hex: "3A3A3C")
@@ -126,6 +128,7 @@ enum AppColor: String, CaseIterable, Identifiable {
     var bottom: Color {
         switch self {
         case .verde: return Color(hex: "0E4632")
+        case .ardesia: return Color(hex: "3C4E5A")
         case .blu: return Color(hex: "12325E")
         case .rosso: return Color(hex: "5E1818")
         case .nero: return Color(hex: "161618")
@@ -136,6 +139,7 @@ enum AppColor: String, CaseIterable, Identifiable {
     var light: Color {
         switch self {
         case .verde: return Color(hex: "4CC38A")
+        case .ardesia: return Color(hex: "FF9C88")   // il corallo dell'icona
         case .blu: return Color(hex: "6FB1FF")
         case .rosso: return Color(hex: "FF8A80")
         case .nero: return Color(hex: "B0B0B5")

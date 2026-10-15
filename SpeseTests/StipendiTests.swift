@@ -43,6 +43,6 @@ final class ColoreAppTests: XCTestCase {
         XCTAssertEqual(Theme.color, .viola)
         d.set("sconosciuto", forKey: appColorKey)
         XCTAssertEqual(Theme.color, .verde)
-        XCTAssertEqual(AppColor.allCases.map(\.name), ["Verde", "Blu", "Rosso", "Nero", "Rosa", "Viola"])
+        XCTAssertEqual(AppColor.allCases.map(\.name), ["Verde", "Ardesia", "Blu", "Rosso", "Nero", "Rosa", "Viola"])
     }
 }
