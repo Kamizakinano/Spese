@@ -226,7 +226,13 @@ struct InstallmentDetailView: View {
                                 .buttonStyle(.bordered).tint(p.provider == v ? Theme.accent : .gray)
                         }
                     }
-                } header: { Text("Acquisto") }
+                    Stepper(value: Binding(get: { max((p.rates.map(\.planIndex).min() ?? 1) - 1, 0) },
+                                           set: { updateInstallmentPaidBefore(p.rates, before: $0) }), in: 0...120) {
+                        Text("Rate già pagate prima: **\(max((p.rates.map(\.planIndex).min() ?? 1) - 1, 0))**")
+                    }
+                } header: { Text("Acquisto") } footer: {
+                    Text("Le rate pagate prima di inserire l'acquisto nell'app: servono solo a contare \"rata X di Y\", non cambiano il saldo.")
+                }
                 Section {
                     ForEach(p.rates) { e in
                         let future = e.date >= Ledger.endOfToday
