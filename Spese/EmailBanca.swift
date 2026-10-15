@@ -92,6 +92,11 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
             try ctx.save()
             return "È la rata \(r.planIndex) di \(r.planCount) di \(r.planName): segnata pagata"
         }
+        // È una spesa ricorrente (mutuo, affitto…) addebitata qualche giorno dopo il previsto? Va al giorno vero.
+        if let msg = matchRecurringPayment(amount: e.amount, when: when, ctx: ctx) {
+            try ctx.save()
+            return msg
+        }
         // Già entrata da Apple Pay (stesso importo, pochi minuti prima o dopo)? Non si conta due volte.
         let near = ((try? ctx.fetch(FetchDescriptor<Expense>())) ?? []).contains {
             abs($0.amount - e.amount) < 0.005 && abs($0.date.timeIntervalSince(when)) < 30 * 60
@@ -131,6 +136,44 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
         try ctx.save()
         return "Prelievo registrato: \(eur(e.amount)) dalla banca ai contanti"
     }
+}
+
+/// L'addebito di una spesa ricorrente (es. il mutuo del giorno 1 che la banca addebita lunedì 3):
+/// stesso importo (con uno scarto fino al 2%, per le rate che cambiano) e al massimo 6 giorni di distanza.
+/// Se la spesa del mese c'è già la sposta al giorno dell'addebito, se non c'è ancora la crea lì.
+@MainActor
+func matchRecurringPayment(amount: Double, when: Date, ctx: ModelContext) -> String? {
+    let cal = Calendar.current
+    let window: TimeInterval = 6 * 86400
+    func close(_ a: Double) -> Bool { abs(a - amount) <= max(0.01, a * 0.02) }
+    let recurring = ((try? ctx.fetch(FetchDescriptor<Recurring>())) ?? []).filter { close($0.amount) }
+    guard !recurring.isEmpty else { return nil }
+    let expenses = (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []
+    let names = Set(recurring.map { $0.name.lowercased() })
+    func dayText(_ d: Date) -> String { d.formatted(.dateTime.weekday(.wide).day().month(.wide)) }
+
+    // 1. La spesa del mese è già stata inserita (il giorno previsto): si sposta al giorno dell'addebito.
+    let generated = expenses.filter {
+        names.contains($0.note.lowercased()) && close($0.amount) && abs($0.date.timeIntervalSince(when)) <= window
+    }
+    if let x = generated.min(by: { abs($0.date.timeIntervalSince(when)) < abs($1.date.timeIntervalSince(when)) }) {
+        if cal.isDate(x.date, inSameDayAs: when) { return "\(x.note) già registrato oggi: ignorata" }
+        let old = x.date
+        x.date = when
+        x.amount = amount
+        return "\(x.note) pagato: \(eur(amount)). Spostato da \(dayText(old)) a \(dayText(when)), il giorno dell'addebito."
+    }
+
+    // 2. Non è ancora stata inserita (l'app non è stata aperta): si inserisce nel giorno dell'addebito.
+    for r in recurring {
+        guard let due = nextRenewal(nextKey: r.nextKey, day: r.day), abs(due.timeIntervalSince(when)) <= window else { continue }
+        let x = Expense(amount: amount, categoryName: r.categoryName, date: when, note: r.name)
+        x.method = "carta"
+        ctx.insert(x)
+        r.nextKey = nextMonthKey(r.nextKey)
+        return "\(r.name) pagato: \(eur(amount)), registrato \(dayText(when)) (era previsto \(dayText(due)))."
+    }
+    return nil
 }
 
 /// Azione per l'automazione "Email" di Comandi rapidi: legge l'email della banca e registra il movimento.

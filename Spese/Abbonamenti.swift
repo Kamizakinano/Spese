@@ -70,6 +70,7 @@ struct SubscriptionsView: View {
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
     @AppStorage(subscriptionRemindDaysKey) private var remindDays = 2
     @State private var adding = false
+    @State private var editing: Recurring?
 
     private struct Row: Identifiable {
         let r: Recurring
@@ -128,7 +129,7 @@ struct SubscriptionsView: View {
                 }
                 ForEach(subs) { s in
                     let l = look(s.r.categoryName)
-                    HStack(spacing: 12) {
+                    Button { editing = s.r } label: { HStack(spacing: 12) {
                         Image(systemName: l.icon).foregroundStyle(.white)
                             .frame(width: 36, height: 36).background(l.color, in: RoundedRectangle(cornerRadius: 9))
                         VStack(alignment: .leading, spacing: 2) {
@@ -138,7 +139,9 @@ struct SubscriptionsView: View {
                         }
                         Spacer()
                         Text(eur(s.r.amount)).bold()
+                        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
                     }
+                    .foregroundStyle(.primary) }
                 }
                 .onDelete { idx in
                     idx.map { subs[$0].r }.forEach(ctx.delete)
@@ -162,6 +165,7 @@ struct SubscriptionsView: View {
         .navigationTitle("Abbonamenti")
         .toolbar { Button { adding = true } label: { Image(systemName: "plus") } }
         .sheet(isPresented: $adding) { RecurringEditor(asSubscription: true) }
+        .sheet(item: $editing) { r in RecurringEditor(editing: r) }
         .task { await scheduleSubscriptionReminders(ctx) }
         .onChange(of: remindDays) { _, _ in Task { await scheduleSubscriptionReminders(ctx) } }
     }

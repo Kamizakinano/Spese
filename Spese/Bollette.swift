@@ -48,13 +48,28 @@ struct ReceiptViewer: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView([.horizontal, .vertical]) {
-                Image(uiImage: image).resizable().scaledToFit()
-                    .frame(width: UIScreen.main.bounds.width * zoom * pinch)
+            // La larghezza viene dallo spazio vero della pagina (va bene su ogni iPhone e in orizzontale).
+            GeometryReader { geo in
+                let w = geo.size.width - 24
+                ScrollView([.horizontal, .vertical]) {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(width: w * zoom * pinch)
+                        .clipShape(RoundedRectangle(cornerRadius: zoom * pinch > 1 ? 0 : 6))
+                        .frame(minWidth: geo.size.width, minHeight: geo.size.height)   // al centro
+                }
+                .scrollIndicators(.hidden)
             }
+            .background(Color.black.ignoresSafeArea())
             .gesture(MagnificationGesture().updating($pinch) { v, s, _ in s = v }
                 .onEnded { zoom = min(max(zoom * $0, 1), 5) })
+            .onTapGesture(count: 2) { withAnimation { zoom = zoom > 1 ? 1 : 2.5 } }
+            .safeAreaInset(edge: .bottom) {
+                Text("Due dita per ingrandire · doppio tocco per lo zoom").font(.caption).foregroundStyle(.white.opacity(0.6))
+                    .padding(.bottom, 6)
+            }
             .navigationTitle("Scontrino").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar { Button("Chiudi") { dismiss() } }
         }
     }

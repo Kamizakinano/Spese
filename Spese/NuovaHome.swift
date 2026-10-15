@@ -22,7 +22,8 @@ struct ExpenseRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                let shown = rowDetail(detail, note: e.note, category: e.categoryRaw)
+                if !shown.isEmpty { Text(shown).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
                 if let trip { TripBadge(name: trip.name) }
                 if e.owedAmount > 0 && e.tripID.isEmpty { OwedBadge(expense: e) }
             }
@@ -38,6 +39,14 @@ struct ExpenseRow: View {
         }
         .contentShape(Rectangle())
     }
+}
+
+/// Seconda riga di una spesa: se la spesa non ha nota il titolo è già la categoria, quindi non la ripete.
+func rowDetail(_ detail: String, note: String, category: String) -> String {
+    guard note.isEmpty else { return detail }
+    var parts = detail.components(separatedBy: " · ")
+    if let i = parts.firstIndex(of: category) { parts.remove(at: i) }
+    return parts.joined(separator: " · ")
 }
 
 /// I sette giorni della settimana del giorno scelto, con una barretta alta quanto si è speso.
@@ -71,6 +80,7 @@ struct HomeView: View {
     @State private var showPeriod = false
     @State private var showMonths = false
     @State private var openMonth: Date?
+    @AppStorage(listScaleKey) private var listScale = ListScale.month.rawValue
     @State private var editing: Expense?
     @State private var tripAdding: Trip?
     @State private var cashCheck = false
@@ -126,7 +136,10 @@ struct HomeView: View {
     /// Spese ricorrenti e abbonamenti che cadono nel giorno scelto (solo giorni futuri).
     private var dayRecurring: [Recurring] {
         guard isFuture, let end = cal.date(byAdding: .day, value: 1, to: day) else { return [] }
-        return recurringAll.filter { r in monthlyDates(nextKey: r.nextKey, day: r.day, until: end).contains { cal.isDate($0, inSameDayAs: day) } }
+        return recurringAll.filter { r in
+            monthlyDates(nextKey: r.nextKey, day: r.day, until: end).contains { cal.isDate($0, inSameDayAs: day) }
+                && !recurringCovered(name: r.name, on: day, expenses: all)
+        }
     }
     private var spentInPeriod: Double {
         guard let p = period else { return 0 }
@@ -159,24 +172,28 @@ struct HomeView: View {
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                 .gesture(daySwipe)
 
                 Section { ringCard; chips }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
                 daySection
                 extraSections
+                weekSection
 
                 Section {
-                    Button { openMonth = day } label: {
+                    Button { listScale = ListScale.month.rawValue; openMonth = day } label: {
                         Text("Tutte le spese di \(day.formatted(.dateTime.month(.wide)))")
                             .bold().frame(maxWidth: .infinity)
                     }
                 }
             }
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 4, for: .scrollContent)
+            .safeAreaPadding(.bottom, 72)   // il pulsante + non copre l'ultimo riquadro
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -248,26 +265,28 @@ struct HomeView: View {
     }
 
     private var dayHeader: some View {
-        HStack {
-            Button { shiftDay(-1) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
-                .accessibilityLabel("Giorno prima")
-            Spacer()
-            // Un tocco sulla data riporta a oggi.
-            Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
-                VStack(spacing: 3) {
+        // Un tocco sulla data riporta a oggi. Le frecce stanno sulla stessa riga della data.
+        VStack(spacing: 3) {
+            HStack {
+                Button { shiftDay(-1) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Giorno prima")
+                Spacer()
+                Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
                     Text(day.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized).font(.headline).foregroundStyle(.primary)
-                    Text(isToday ? "Oggi" : "Torna a oggi").font(.caption.bold())
-                        .padding(.horizontal, 8).padding(.vertical, 2)
-                        .background(isToday ? Theme.accent.opacity(0.15) : Color.secondary.opacity(0.12), in: Capsule())
-                        .foregroundStyle(isToday ? Theme.accent : Color.secondary)
                 }
+                Spacer()
+                Button { shiftDay(1) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Giorno dopo")
             }
-            Spacer()
-            Button { shiftDay(1) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
-                .accessibilityLabel("Giorno dopo")
+            Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
+                Text(isToday ? "Oggi" : "Torna a oggi").font(.caption.bold())
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(isToday ? Theme.accent.opacity(0.15) : Color.secondary.opacity(0.12), in: Capsule())
+                    .foregroundStyle(isToday ? Theme.accent : Color.secondary)
+            }
         }
         .buttonStyle(.borderless)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 4).padding(.vertical, 4)
     }
 
     /// Anello del giorno: quanto si è speso rispetto al budget. Toccandolo si sceglie il periodo dello stipendio.
@@ -307,8 +326,11 @@ struct HomeView: View {
                     }
                     if let p = period {
                         let days = daysLeftInPeriod
-                        Text("Fino al \(p.end.formatted(.dateTime.day().month(.wide))) · ancora \(days) \(days == 1 ? "giorno" : "giorni")")
-                            .font(.caption.bold()).foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Fino al \(p.end.formatted(.dateTime.day().month(.wide)))").font(.caption.bold())
+                            Text("ancora \(days) \(days == 1 ? "giorno" : "giorni")").font(.caption)
+                        }
+                        .foregroundStyle(Theme.accent)
                         Text("Speso dal \(p.start.formatted(.dateTime.day().month(.abbreviated))): \(eur(spentInPeriod))")
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -369,6 +391,50 @@ struct HomeView: View {
                 Spacer()
                 Text(eur(list.reduce(0) { $0 + $1.amount } + dayRecurring.reduce(0) { $0 + $1.amount }))
             }
+        }
+    }
+
+    /// Questa settimana: una barretta per giorno e il confronto con la settimana scorsa allo stesso punto.
+    @ViewBuilder private var weekSection: some View {
+        let now = Date()
+        let days = weekDays(of: now)
+        let values = days.map { $0 < Ledger.endOfToday ? spentOn($0) : 0 }
+        let total = values.reduce(0, +)
+        let lastWeek = days.compactMap { cal.date(byAdding: .day, value: -7, to: $0) }
+            .filter { $0 < (cal.date(byAdding: .day, value: -7, to: Ledger.endOfToday) ?? now) }
+            .map(spentOn).reduce(0, +)
+        let top = max(values.max() ?? 0, 1)
+        Section {
+            Button { listScale = ListScale.week.rawValue; openMonth = cal.startOfDay(for: now) } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Questa settimana").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        if let t = weekCompareText(this: total, last: lastWeek) {
+                            Text(t).font(.caption.bold()).foregroundStyle(total <= lastWeek ? Theme.accent : Color.orange)
+                        }
+                    }
+                    HStack(alignment: .bottom) {
+                        Text(eur(total)).font(.title3.bold()).foregroundStyle(.primary)
+                        Spacer(minLength: 12)
+                        HStack(alignment: .bottom, spacing: 5) {
+                            ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+                                let today = cal.isDateInToday(d)
+                                VStack(spacing: 2) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(d >= Ledger.endOfToday ? Color.secondary.opacity(0.15) : (today ? Theme.accent : Theme.accent.opacity(0.4)))
+                                        .frame(width: 14, height: max(3, 34 * values[i] / top))
+                                    Text(d.formatted(.dateTime.weekday(.narrow))).font(.system(size: 9)).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .frame(height: 48, alignment: .bottom)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Questa settimana \(eur(total)). Apri l'elenco della settimana")
         }
     }
 
@@ -649,7 +715,56 @@ struct MonthPickerView: View {
     }
 }
 
-// MARK: - Tutte le spese del mese
+// MARK: - Elenco delle spese: giorno, settimana o mese
+
+let listScaleKey = "elencoScala"
+
+enum ListScale: Int, CaseIterable {
+    case day, week, month
+    var name: String { ["Giorno", "Settimana", "Mese"][rawValue] }
+    var component: Calendar.Component { [.day, .weekOfYear, .month][rawValue] }
+}
+
+/// Il giorno, la settimana (da lunedì) o il mese che contiene `date`.
+func listRange(_ scale: ListScale, around date: Date) -> (start: Date, end: Date) {
+    let cal = Calendar.current
+    switch scale {
+    case .day:
+        let s = cal.startOfDay(for: date)
+        return (s, cal.date(byAdding: .day, value: 1, to: s) ?? s)
+    case .week:
+        return weekRange(date)
+    case .month:
+        let iv = cal.dateInterval(of: .month, for: date)
+        return (iv?.start ?? date, iv?.end ?? date)
+    }
+}
+
+/// Titolo del periodo: "Giovedì 15 ottobre", "12 – 18 ottobre", "Ottobre 2026".
+func listTitle(_ scale: ListScale, around date: Date) -> String {
+    let r = listRange(scale, around: date)
+    let cal = Calendar.current
+    switch scale {
+    case .day:
+        return date.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized
+    case .week:
+        let last = cal.date(byAdding: .day, value: -1, to: r.end) ?? r.end
+        if cal.isDate(r.start, equalTo: last, toGranularity: .month) {
+            return "\(r.start.formatted(.dateTime.day())) – \(last.formatted(.dateTime.day().month(.wide)))"
+        }
+        return "\(r.start.formatted(.dateTime.day().month(.abbreviated))) – \(last.formatted(.dateTime.day().month(.abbreviated)))"
+    case .month:
+        return date.formatted(.dateTime.month(.wide).year()).capitalized
+    }
+}
+
+/// "−18% della scorsa": confronto con la settimana scorsa allo stesso punto. nil se la settimana scorsa era vuota.
+func weekCompareText(this: Double, last: Double) -> String? {
+    guard last > 0.5 else { return nil }
+    let d = Int(((this - last) / last * 100).rounded())
+    if d == 0 { return "come la scorsa" }
+    return "\(d > 0 ? "+" : "−")\(abs(d))% della scorsa"
+}
 
 struct MonthView: View {
     let onOpenDay: (Date) -> Void
@@ -665,7 +780,8 @@ struct MonthView: View {
     @AppStorage(limitPeriodOnKey) private var limitOn = false
     @AppStorage(limitStartKey) private var limitStart: Double = 0
     @AppStorage(limitEndKey) private var limitEnd: Double = 0
-    @State private var month: Date
+    @State private var month: Date          // il giorno da cui parte il periodo scelto
+    @AppStorage(listScaleKey) private var scaleRaw = ListScale.month.rawValue
     @State private var mode = 0
     @State private var search = ""
     @State private var filterCat = ""
@@ -678,9 +794,15 @@ struct MonthView: View {
     }
 
     private let cal = Calendar.current
+    private var scale: ListScale { ListScale(rawValue: scaleRaw) ?? .month }
+    private var range: (start: Date, end: Date) { listRange(scale, around: month) }
     private var isCurrentMonth: Bool { cal.isDate(month, equalTo: Date(), toGranularity: .month) }
+    private var isCurrent: Bool { Date() >= range.start && Date() < range.end }
     private var expenses: [Expense] {
-        all.filter { cal.isDate($0.date, equalTo: month, toGranularity: .month) && $0.date < Ledger.endOfToday }
+        all.filter { $0.date >= range.start && $0.date < range.end && $0.date < Ledger.endOfToday }
+    }
+    private func shift(_ n: Int) {
+        withAnimation { month = cal.date(byAdding: scale.component, value: n, to: month) ?? month }
     }
     private var statMonth: [Expense] { statExpenses(expenses, trips: trips) }
     private var total: Double { statMonth.reduce(0) { $0 + $1.myAmount } }
@@ -731,31 +853,36 @@ struct MonthView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Button { month = cal.date(byAdding: .month, value: -1, to: month) ?? month } label: { Image(systemName: "chevron.left") }
-                    Spacer()
-                    Button { withAnimation { month = Date() } } label: {
-                        VStack(spacing: 1) {
-                            Text(month.formatted(.dateTime.month(.wide).year()).capitalized).font(.headline).foregroundStyle(.primary)
-                            if !isCurrentMonth { Text("Torna a oggi").font(.caption).foregroundStyle(Theme.accent) }
+                Picker("Periodo", selection: $scaleRaw) {
+                    ForEach(ListScale.allCases, id: \.rawValue) { Text($0.name).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                VStack(spacing: 2) {
+                    HStack {
+                        Button { shift(-1) } label: { Image(systemName: "chevron.left").font(.headline) }
+                            .accessibilityLabel("Prima")
+                        Spacer()
+                        Button { withAnimation { month = Date() } } label: {
+                            Text(listTitle(scale, around: month)).font(.headline).foregroundStyle(.primary)
                         }
+                        Spacer()
+                        Button { shift(1) } label: { Image(systemName: "chevron.right").font(.headline) }
+                            .accessibilityLabel("Dopo")
                     }
-                    Spacer()
-                    Button { month = cal.date(byAdding: .month, value: 1, to: month) ?? month } label: { Image(systemName: "chevron.right") }
+                    if !isCurrent {
+                        Button { withAnimation { month = Date() } } label: { Text("Torna a oggi").font(.caption).foregroundStyle(Theme.accent) }
+                    }
                 }
                 .buttonStyle(.borderless)
                 Picker("Vista", selection: $mode) { Text("Elenco").tag(0); Text("Categorie").tag(1) }.pickerStyle(.segmented)
-                HStack(spacing: 8) {
-                    summary("Entrate", fig.incomeNet, Theme.accent)
-                    summary("Spese", total, .primary)
-                    summary("Differenza", fig.incomeNet - total, fig.incomeNet - total < 0 ? .red : .primary)
-                }
+                summaryRow
+                if scale == .week { weekBars }
             }
             .listRowSeparator(.hidden)
 
             if mode == 0 { listSections } else { categorySections }
         }
-        .navigationTitle("Spese del mese").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Elenco spese").navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "Cerca spese")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -778,6 +905,47 @@ struct MonthView: View {
         }
     }
 
+    /// Mese: entrate, spese e differenza. Giorno e settimana: speso, con carta e contanti.
+    @ViewBuilder private var summaryRow: some View {
+        HStack(spacing: 8) {
+            if scale == .month {
+                summary("Entrate", fig.incomeNet, Theme.accent)
+                summary("Spese", total, .primary)
+                summary("Differenza", fig.incomeNet - total, fig.incomeNet - total < 0 ? .red : .primary)
+            } else {
+                let cash = statMonth.filter(\.isCash).reduce(0) { $0 + $1.myAmount }
+                summary("Speso", total, .primary)
+                summary("Carta", total - cash, .primary)
+                summary("Contanti", cash, .primary)
+            }
+        }
+    }
+
+    /// Settimana: una barretta per giorno. Tocchi un giorno per aprirlo.
+    private var weekBars: some View {
+        let days = weekDays(of: month)
+        let stats = statMonth
+        let values = days.map { d in stats.filter { cal.isDate($0.date, inSameDayAs: d) }.reduce(0) { $0 + $1.myAmount } }
+        let top = max(values.max() ?? 0, 1)
+        return HStack(alignment: .bottom, spacing: 8) {
+            ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+                Button { onOpenDay(d) } label: {
+                    VStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(d >= Ledger.endOfToday ? Color.secondary.opacity(0.15)
+                                  : (cal.isDateInToday(d) ? Theme.accent : Theme.accent.opacity(0.45)))
+                            .frame(height: max(3, 54 * values[i] / top))
+                        Text(d.formatted(.dateTime.weekday(.narrow))).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(d.formatted(.dateTime.weekday(.wide).day()) + ", \(eur(values[i]))")
+            }
+        }
+        .frame(height: 76, alignment: .bottom)
+    }
+
     private func summary(_ title: String, _ value: Double, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
@@ -786,9 +954,13 @@ struct MonthView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var emptyText: String {
+        ["Nessuna spesa in questo giorno.", "Nessuna spesa in questa settimana.", "Nessuna spesa in questo mese."][scale.rawValue]
+    }
+
     @ViewBuilder private var listSections: some View {
         if byDay.isEmpty {
-            Section { Text(search.isEmpty ? "Nessuna spesa in questo mese." : "Nessuna spesa trovata.").foregroundStyle(.secondary) }
+            Section { Text(search.isEmpty ? emptyText : "Nessuna spesa trovata.").foregroundStyle(.secondary) }
         }
         ForEach(byDay, id: \.day) { g in
             Section {
@@ -816,7 +988,7 @@ struct MonthView: View {
 
     @ViewBuilder private var categorySections: some View {
         if byCat.isEmpty {
-            Section { Text("Nessuna spesa in questo mese.").foregroundStyle(.secondary) }
+            Section { Text(emptyText).foregroundStyle(.secondary) }
         } else {
             Section {
                 ZStack {
@@ -834,16 +1006,20 @@ struct MonthView: View {
                 .frame(height: 220).padding(.vertical, 8)
                 ForEach(byCat) { i in
                     let share = total > 0 ? i.total / total : 0
-                    NavigationLink { CategoryExpensesView(category: i.name, month: month) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: i.icon).font(.body).foregroundStyle(i.color)
-                                .frame(width: 38, height: 38)
-                                .background(i.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
-                            Text(i.name).foregroundStyle(i.color).lineLimit(1).minimumScaleFactor(0.8)
-                            Spacer(minLength: 6)
-                            Text(eur(i.total)).lineLimit(1)
-                            Text("\(Int((share * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
-                        }
+                    let row = HStack(spacing: 12) {
+                        Image(systemName: i.icon).font(.body).foregroundStyle(i.color)
+                            .frame(width: 38, height: 38)
+                            .background(i.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+                        Text(i.name).foregroundStyle(i.color).lineLimit(1).minimumScaleFactor(0.8)
+                        Spacer(minLength: 6)
+                        Text(eur(i.total)).lineLimit(1)
+                        Text("\(Int((share * 100).rounded()))%").font(.footnote).foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+                    }
+                    // La pagina della categoria è per mese: dal giorno o dalla settimana si vede solo il totale.
+                    if scale == .month {
+                        NavigationLink { CategoryExpensesView(category: i.name, month: month) } label: { row }
+                    } else {
+                        row
                     }
                     if i.name == installmentCategory {
                         ForEach(installmentProviderTotals(statMonth), id: \.name) { p in
@@ -859,7 +1035,7 @@ struct MonthView: View {
                 }
             }
         }
-        if !limited.isEmpty && (!limitOn || isCurrentMonth) {
+        if scale == .month && !limited.isEmpty && (!limitOn || isCurrentMonth) {
             Section(limitsTitle) {
                 ForEach(limited) { c in
                     let s = spent(c)

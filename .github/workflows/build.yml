@@ -61,8 +61,24 @@ jobs:
           xcrun simctl io "$UDID" screenshot screenshot.png
           if ! ps -p "$PID" > /dev/null; then
             echo "::error::L'app si è chiusa da sola (crash) dopo l'avvio"
-            ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i spese && \
-              cat ~/Library/Logs/DiagnosticReports/*Spese* | head -150
+            # Il motivo del crash e le prime righe del thread che si è fermato, come annotazioni.
+            for f in $(ls -t ~/Library/Logs/DiagnosticReports/*Spese*.ips 2>/dev/null | head -1); do
+              python3 - "$f" <<'PY' | head -25 | sed 's/^/::error::/'
+          import json, sys
+          raw = open(sys.argv[1]).read()
+          body = json.loads(raw[raw.index("\n") + 1:])
+          ex = body.get("exception", {})
+          print("Crash:", ex.get("type"), ex.get("signal"), body.get("termination", {}).get("indicator", ""))
+          for k, v in (body.get("asi") or {}).items():
+              print("Messaggio:", k, " ".join(v)[:300])
+          imgs = body.get("usedImages", [])
+          th = next((t for t in body.get("threads", []) if t.get("triggered")), None)
+          for fr in (th or {}).get("frames", [])[:20]:
+              img = imgs[fr.get("imageIndex", 0)].get("name", "?") if fr.get("imageIndex", 0) < len(imgs) else "?"
+              loc = f' {fr["sourceFile"]}:{fr.get("sourceLine")}' if fr.get("sourceFile") else ""
+              print(f'{img} {fr.get("symbol", hex(fr.get("imageOffset", 0)))}{loc}')
+          PY
+            done
             exit 1
           fi
           echo "L'app è ancora in esecuzione dopo 20 secondi: ok"

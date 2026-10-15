@@ -33,6 +33,23 @@ func monthlyDates(nextKey: String, day: Int, until end: Date) -> [Date] {
     return out
 }
 
+/// C'è già una spesa con lo stesso nome della ricorrente in quel giorno (es. il mutuo inserito a mano)?
+/// Allora la ricorrente non si aggiunge, né si conta due volte.
+func recurringCovered(name: String, on day: Date, expenses: [Expense]) -> Bool {
+    let n = name.trimmingCharacters(in: .whitespaces)
+    return expenses.contains {
+        Calendar.current.isDate($0.date, inSameDayAs: day)
+            && $0.note.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(n) == .orderedSame
+    }
+}
+
+/// Il mese dopo una chiave "2026-10" → "2026-11".
+func nextMonthKey(_ key: String) -> String {
+    let p = key.split(separator: "-").compactMap { Int($0) }
+    guard p.count == 2 else { return key }
+    return p[1] == 12 ? String(format: "%04d-01", p[0] + 1) : String(format: "%04d-%02d", p[0], p[1] + 1)
+}
+
 /// Uscite ed entrate note dei prossimi `days` giorni: spese con data futura (carta), rate,
 /// spese ricorrenti e abbonamenti, stipendio automatico.
 func plannedMoves(expenses: [Expense], recurring: [Recurring], account: Account?, now: Date = Date(), days: Int = 30) -> [PlannedMove] {
@@ -43,7 +60,8 @@ func plannedMoves(expenses: [Expense], recurring: [Recurring], account: Account?
         .map { PlannedMove(name: $0.note.isEmpty ? $0.categoryRaw : $0.note, date: $0.date, amount: -$0.amount,
                            icon: $0.planID.isEmpty ? "calendar" : "creditcard") }
     for r in recurring {
-        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end) where d >= from {
+        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end)
+        where d >= from && !recurringCovered(name: r.name, on: d, expenses: expenses) {
             out.append(PlannedMove(name: r.name, date: d, amount: -r.amount, icon: r.isSubscription ? "play.rectangle" : "repeat"))
         }
     }
@@ -236,7 +254,7 @@ struct Prossimi30Tile: View {
 
     var body: some View {
         let proj = project(start: card, moves: planned, perDay: perDay)
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Prossimi 30 giorni").font(.caption).foregroundStyle(.secondary)
                 if let low = proj.lowest {
@@ -245,12 +263,22 @@ struct Prossimi30Tile: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            Spacer(minLength: 12)
+            // Scala tra il minimo e il massimo: così la linea mostra davvero quanto scende.
+            let values = proj.points.map(\.balance)
+            let lo = values.min() ?? 0, hi = values.max() ?? 0
+            let pad = max((hi - lo) * 0.15, 1)
             Chart(proj.points, id: \.date) { p in
-                LineMark(x: .value("Giorno", p.date), y: .value("Saldo", p.balance)).foregroundStyle(Theme.accent)
+                LineMark(x: .value("Giorno", p.date), y: .value("Saldo", p.balance))
+                    .foregroundStyle(Theme.accent).interpolationMethod(.monotone)
+                if let low = proj.lowest {
+                    PointMark(x: .value("Giorno", low.date), y: .value("Saldo", low.balance))
+                        .foregroundStyle(low.balance < 0 ? Color.red : Theme.accent).symbolSize(24)
+                }
             }
+            .chartYScale(domain: (lo - pad)...(hi + pad))
             .chartXAxis(.hidden).chartYAxis(.hidden)
-            .frame(width: 96, height: 36)
+            .frame(width: 104, height: 44)
         }
     }
 }
