@@ -182,6 +182,17 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
+                // Nei giorni del viaggio il riquadro sta in alto, per aggiungere le spese al volo.
+                if let t = activeTrip(trips) {
+                    Section {
+                        NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
+                            .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Button { tripAdding = t } label: {
+                            Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
+                        }
+                    }
+                }
+
                 daySection
                 extraSections
                 weekSection
@@ -516,15 +527,6 @@ struct HomeView: View {
             }
         }
 
-        if let t = activeTrip(trips) {
-            Section {
-                NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
-                    .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Button { tripAdding = t } label: {
-                    Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
-                }
-            }
-        }
 
         if owedTotal > 0 {
             Section {
