@@ -60,4 +60,22 @@ final class NovitaOttobreTests: XCTestCase {
         XCTAssertTrue(text.contains("Pausa &lt;Lavoro&gt; &amp; co"))
         XCTAssertTrue(text.contains("<v>7.10</v>"))
     }
+
+    func testFileCSV() {
+        let ex = [Expense(amount: 7.10, categoryName: "Alimentari", date: d(2026, 10, 14), note: "Pausa; \"Lavoro\"")]
+        let data = makeCSV(ex)
+        XCTAssertEqual(Array(data.prefix(3)), [0xEF, 0xBB, 0xBF], "BOM per Excel")
+        let text = String(decoding: data.dropFirst(3), as: UTF8.self)
+        let lines = text.components(separatedBy: "\r\n")
+        XCTAssertEqual(lines.count, 3, "Intestazione, una spesa, totale")
+        XCTAssertEqual(lines[1], "14/10/2026;\"Pausa; \"\"Lavoro\"\"\";Alimentari;7,10;Carta;")
+        XCTAssertEqual(lines[2], "Totale;;;7,10;;")
+    }
+
+    func testFilePDF() {
+        let ex = (1...80).map { Expense(amount: Double($0), categoryName: "Alimentari", date: d(2026, 10, 1 + $0 % 28), note: "Spesa \($0)") }
+        let data = makePDF(ex, title: "Spese di ottobre 2026", subtitle: "Dal 1 al 31 ottobre 2026")
+        XCTAssertEqual(String(decoding: data.prefix(5), as: UTF8.self), "%PDF-")
+        XCTAssertGreaterThan(data.count, 1000)
+    }
 }

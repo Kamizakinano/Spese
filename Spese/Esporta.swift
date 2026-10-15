@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 // MARK: - File Excel (.xlsx)
 
@@ -91,12 +92,125 @@ func exportRows(_ expenses: [Expense]) -> [[XCell]] {
     return rows
 }
 
-// MARK: - Pagina "Esporta in Excel"
+// MARK: - File CSV
+
+/// CSV all'italiana: separatore ";", virgola nei decimali, BOM per Excel.
+func makeCSV(_ expenses: [Expense]) -> Data {
+    let f = DateFormatter(); f.locale = Locale(identifier: "it_IT"); f.dateFormat = "dd/MM/yyyy"
+    func field(_ s: String) -> String {
+        s.contains(";") || s.contains("\"") || s.contains("\n") ? "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : s
+    }
+    func num(_ v: Double) -> String { String(format: "%.2f", v).replacingOccurrences(of: ".", with: ",") }
+    var lines = ["Data;Nota;Categoria;Importo;Pagamento;Tag"]
+    for e in expenses.sorted(by: { $0.date < $1.date }) {
+        lines.append([f.string(from: e.date), field(e.note), field(e.categoryRaw), num(e.amount),
+                      e.isCash ? "Contanti" : "Carta", field(e.tag)].joined(separator: ";"))
+    }
+    lines.append("Totale;;;\(num(expenses.reduce(0) { $0 + $1.amount }));;")
+    return Data([0xEF, 0xBB, 0xBF]) + Data(lines.joined(separator: "\r\n").utf8)
+}
+
+// MARK: - Riepilogo PDF
+
+/// Riepilogo stampabile (A4): totali, categorie e l'elenco delle spese.
+func makePDF(_ expenses: [Expense], title: String, subtitle: String) -> Data {
+    let page = CGRect(x: 0, y: 0, width: 595, height: 842), m: CGFloat = 40
+    let list = expenses.sorted { $0.date < $1.date }
+    let total = list.reduce(0) { $0 + $1.amount }
+    let cash = list.filter(\.isCash).reduce(0) { $0 + $1.amount }
+    let cats = Dictionary(grouping: list, by: \.categoryRaw).mapValues { $0.reduce(0) { $0 + $1.amount } }
+        .sorted { $0.value > $1.value }
+    let df = DateFormatter(); df.locale = Locale(identifier: "it_IT"); df.dateFormat = "dd/MM"
+    let accent = UIColor(red: 0x5D / 255, green: 0x75 / 255, blue: 0x84 / 255, alpha: 1)
+    func font(_ s: CGFloat, _ w: UIFont.Weight = .regular) -> UIFont { .systemFont(ofSize: s, weight: w) }
+    func draw(_ t: String, _ x: CGFloat, _ y: CGFloat, _ f: UIFont, _ c: UIColor = .black, width: CGFloat = 300, right: Bool = false) {
+        let p = NSMutableParagraphStyle(); p.alignment = right ? .right : .left; p.lineBreakMode = .byTruncatingTail
+        (t as NSString).draw(in: CGRect(x: right ? x - width : x, y: y, width: width, height: f.lineHeight + 2),
+                             withAttributes: [.font: f, .foregroundColor: c, .paragraphStyle: p])
+    }
+    let cols: [CGFloat] = [m, m + 50, m + 250, m + 390]   // data, nota, categoria, pagamento; importo a destra
+    let right = page.width - m
+
+    return UIGraphicsPDFRenderer(bounds: page).pdfData { ctx in
+        var y: CGFloat = 0
+        func header() {
+            draw("Data", cols[0], y, font(9, .semibold), .gray); draw("Nota", cols[1], y, font(9, .semibold), .gray)
+            draw("Categoria", cols[2], y, font(9, .semibold), .gray); draw("Pagamento", cols[3], y, font(9, .semibold), .gray)
+            draw("Importo", right, y, font(9, .semibold), .gray, width: 80, right: true)
+            y += 16
+        }
+        func newPage() { ctx.beginPage(); y = m; header() }
+
+        ctx.beginPage()
+        accent.setFill(); UIBezierPath(roundedRect: CGRect(x: m, y: m, width: page.width - 2 * m, height: 90), cornerRadius: 12).fill()
+        draw(title, m + 18, m + 14, font(20, .bold), .white, width: 400)
+        draw(subtitle, m + 18, m + 42, font(10), .white.withAlphaComponent(0.85), width: 400)
+        draw(eur(total), right - 18, m + 14, font(22, .bold), .white, width: 200, right: true)
+        draw("\(list.count) spese · carta \(eur(total - cash)) · contanti \(eur(cash))", right - 18, m + 46, font(9),
+             .white.withAlphaComponent(0.85), width: 300, right: true)
+        y = m + 110
+
+        if !cats.isEmpty {
+            draw("Categorie", m, y, font(12, .semibold)); y += 20
+            let maxV = cats.first?.value ?? 1
+            for (name, v) in cats {
+                draw(name, m, y, font(10), width: 150)
+                UIColor(white: 0.92, alpha: 1).setFill()
+                UIBezierPath(roundedRect: CGRect(x: m + 150, y: y + 3, width: 250, height: 8), cornerRadius: 4).fill()
+                accent.setFill()
+                UIBezierPath(roundedRect: CGRect(x: m + 150, y: y + 3, width: max(250 * v / maxV, 4), height: 8), cornerRadius: 4).fill()
+                draw(eur(v), right, y, font(10, .medium), width: 90, right: true)
+                draw(total > 0 ? "\(Int((v / total * 100).rounded()))%" : "", m + 410, y, font(9), .gray, width: 30)
+                y += 17
+                if y > page.height - m - 40 { newPage() }
+            }
+            y += 14
+        }
+
+        draw("Spese", m, y, font(12, .semibold)); y += 20
+        header()
+        for (i, e) in list.enumerated() {
+            if y > page.height - m - 20 { newPage() }
+            if i % 2 == 0 {
+                UIColor(white: 0.965, alpha: 1).setFill(); UIRectFill(CGRect(x: m - 4, y: y - 2, width: page.width - 2 * m + 8, height: 16))
+            }
+            draw(df.string(from: e.date), cols[0], y, font(9))
+            draw(e.note.isEmpty ? e.categoryRaw : e.note, cols[1], y, font(9), width: 190)
+            draw(e.categoryRaw, cols[2], y, font(9), .darkGray, width: 130)
+            draw(e.isCash ? "Contanti" : "Carta", cols[3], y, font(9), .darkGray, width: 70)
+            draw(eur(e.amount), right, y, font(9, .medium), width: 80, right: true)
+            y += 16
+        }
+        if y > page.height - m - 30 { newPage() }
+        y += 6
+        UIColor.lightGray.setFill(); UIRectFill(CGRect(x: m, y: y, width: page.width - 2 * m, height: 0.5))
+        draw("Totale", cols[0], y + 6, font(10, .bold))
+        draw(eur(total), right, y + 6, font(10, .bold), width: 120, right: true)
+        draw("Creato con Spese", m, page.height - m + 10, font(8), .gray)
+    }
+}
+
+// MARK: - Pagina "Esporta"
+
+enum ExportFormat: Int, CaseIterable {
+    case excel, csv, pdf
+    var name: String { ["Excel", "CSV", "PDF"][rawValue] }
+    var ext: String { ["xlsx", "csv", "pdf"][rawValue] }
+    var icon: String { ["tablecells", "doc.plaintext", "doc.richtext"][rawValue] }
+    var hint: String {
+        switch self {
+        case .excel: "Il file si apre con Excel o Numbers. Puoi salvarlo in File o mandarlo su WhatsApp e per email."
+        case .csv: "Testo semplice, una riga per spesa: si apre con qualsiasi foglio di calcolo o programma."
+        case .pdf: "Un riepilogo da leggere o stampare: totali, categorie e l'elenco delle spese."
+        }
+    }
+}
 
 struct ExportView: View {
     @Query(sort: \Expense.date) private var all: [Expense]
     @Query private var accounts: [Account]
     @State private var mode = 0
+    @State private var format = ExportFormat.excel
     @State private var from = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
     @State private var to = Date()
     @State private var file: URL?
@@ -116,6 +230,7 @@ struct ExportView: View {
         }
     }
     private var list: [Expense] { all.filter { $0.date >= range.start && $0.date < range.end && $0.date < Ledger.endOfToday } }
+    private var lastDay: Date { Calendar.current.date(byAdding: .day, value: -1, to: range.end) ?? range.end }
 
     var body: some View {
         List {
@@ -128,26 +243,37 @@ struct ExportView: View {
                     DatePicker("Al", selection: $to, displayedComponents: .date)
                 }
             } footer: {
-                let last = Calendar.current.date(byAdding: .day, value: -1, to: range.end) ?? range.end
-                Text("Dal \(range.start.formatted(.dateTime.day().month(.wide).year())) al \(last.formatted(.dateTime.day().month(.wide).year())) · \(list.count) spese, \(eur(list.reduce(0) { $0 + $1.amount }))")
+                Text("Dal \(range.start.formatted(.dateTime.day().month(.wide).year())) al \(lastDay.formatted(.dateTime.day().month(.wide).year())) · \(list.count) spese, \(eur(list.reduce(0) { $0 + $1.amount }))")
+            }
+            Section("Formato") {
+                Picker("Formato", selection: $format) {
+                    ForEach(ExportFormat.allCases, id: \.self) { Text($0.name).tag($0) }
+                }.pickerStyle(.segmented)
             }
             Section {
                 if let file {
-                    ShareLink(item: file) { Label("Esporta \(list.count) spese (Excel)", systemImage: "tablecells") }
+                    ShareLink(item: file) { Label("Esporta \(list.count) spese (\(format.name))", systemImage: format.icon) }
                 }
             } footer: {
-                Text("Il file si apre con Excel o Numbers. Puoi salvarlo in File o mandarlo su WhatsApp e per email.")
+                Text(format.hint)
             }
         }
-        .navigationTitle("Esporta in Excel").navigationBarTitleDisplayMode(.inline)
-        .task(id: "\(mode)-\(from)-\(to)-\(all.count)") { file = writeFile() }
+        .navigationTitle("Esporta").navigationBarTitleDisplayMode(.inline)
+        .task(id: "\(mode)-\(format.rawValue)-\(from)-\(to)-\(all.count)") { file = writeFile() }
     }
 
     private func writeFile() -> URL? {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        let name = "Spese \(f.string(from: range.start)).xlsx"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        let data = makeXLSX(sheet: "Spese", rows: exportRows(list), widths: [12, 30, 20, 12, 12, 16])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Spese \(f.string(from: range.start)).\(format.ext)")
+        let data: Data
+        switch format {
+        case .excel: data = makeXLSX(sheet: "Spese", rows: exportRows(list), widths: [12, 30, 20, 12, 12, 16])
+        case .csv: data = makeCSV(list)
+        case .pdf:
+            let day = Date.FormatStyle().day().month(.wide).year()
+            let title = mode == 0 ? "Spese di " + range.start.formatted(.dateTime.month(.wide).year()) : "Spese"
+            data = makePDF(list, title: title, subtitle: "Dal \(range.start.formatted(day)) al \(lastDay.formatted(day))")
+        }
         do { try data.write(to: url); return url } catch { return nil }
     }
 }
