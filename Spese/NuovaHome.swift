@@ -181,8 +181,13 @@ struct HomeView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showMonths = true } label: {
-                        Label(day.formatted(.dateTime.month(.wide).year()).capitalized, systemImage: "calendar")
-                            .labelStyle(.titleAndIcon).font(.subheadline.bold())
+                        // Testo e icona insieme: nella barra in alto una Label mostrerebbe solo l'icona.
+                        HStack(spacing: 5) {
+                            Image(systemName: "calendar")
+                            Text(day.formatted(.dateTime.month(.wide).year()).capitalized)
+                            Image(systemName: "chevron.down").font(.caption.bold())
+                        }
+                        .font(.subheadline.bold())
                     }
                     .accessibilityLabel("Scegli il mese")
                 }
