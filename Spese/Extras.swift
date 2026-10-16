@@ -44,6 +44,8 @@ struct AddExpenseView: View {
 
     private var knownTags: [String] { Array(Set(all.map(\.tag).filter { !$0.isEmpty })).sorted() }
     @Query private var debts: [Debt]
+    @Query(sort: \Trip.startDate, order: .reverse) private var trips: [Trip]
+    @State private var tripChoice = ""      // viaggio a cui collegare la spesa ("" = nessuno)
     /// Persone già usate in "Ti devono" e "Devo dare", le più frequenti per prime.
     private var knownPeople: [String] {
         let names = all.map { $0.owedBy.trimmingCharacters(in: .whitespaces) } + debts.map(\.person)
@@ -98,6 +100,13 @@ struct AddExpenseView: View {
                 if isPlan { planSection }
                 if !isPlan {
                     Section("Viaggio o tag") {
+                        if !trips.isEmpty {
+                            // Voli, hotel e prenotazioni pagati prima: entrano nel totale della vacanza.
+                            Picker("Fa parte del viaggio", selection: $tripChoice) {
+                                Text("Nessuno").tag("")
+                                ForEach(trips) { t in Label(t.name, systemImage: "airplane").tag(t.uid) }
+                            }
+                        }
                         TextField("Tag (es. Roma 2026)", text: $tag)
                         if !knownTags.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -251,6 +260,7 @@ struct AddExpenseView: View {
             shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? amountString(e.owedAmount) : ""
             method = e.method
             receipt = e.receipt
+            tripChoice = e.tripID
         } else {
             date = defaultDate
             method = lastMethod
@@ -306,11 +316,13 @@ struct AddExpenseView: View {
             e.amount = a; e.categoryRaw = catName; e.date = date; e.note = note; e.tag = t
             e.owedAmount = owed; e.owedBy = owed > 0 ? (by.isEmpty ? e.owedBy : by) : by; e.method = method
             e.needsAmount = false
+            e.tripID = tripChoice
             if owed == 0 { e.settled = false }
             if e.receipt != receipt { e.receipt = receipt }
         } else {
             let e = Expense(amount: a, categoryName: catName, date: date, note: note)
             e.tag = t; e.owedAmount = owed; e.owedBy = by; e.method = method
+            e.tripID = tripChoice
             e.receipt = receipt
             // Mappa delle spese: dove sei adesso (solo se l'hai accesa).
             if UserDefaults.standard.bool(forKey: spendMapKey), let l = SpendLocation.shared.recent {

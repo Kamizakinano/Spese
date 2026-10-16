@@ -74,7 +74,7 @@ func futureRateDates(_ p: PayPalInstallmentEmail, after paid: Date, count: Int) 
 }
 
 /// Riscrive "Nome · rata X di Y" su tutte le rate dell'acquisto.
-private func renumber(_ rates: [Expense]) {
+func renumber(_ rates: [Expense]) {
     let count = rates.map(\.planIndex).max() ?? rates.count
     for e in rates {
         e.planCount = count

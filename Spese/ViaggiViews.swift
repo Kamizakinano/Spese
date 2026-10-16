@@ -429,7 +429,8 @@ struct TripExpenseEditor: View {
     }
 
     private func load() {
-        participants = Set(trip.everyone)
+        // Spesa nuova: di partenza è solo mia; chi la divide accende gli altri.
+        participants = [me]
         inLocal = trip.isForeign
         catName = cats.first?.name ?? "Altro"
         date = trip.contains(Date()) ? Date() : trip.startDate
@@ -520,30 +521,52 @@ struct TripBadge: View {
     }
 }
 
-/// Riquadro del viaggio in corso: giorno, speso e budget.
+/// Quanto ho speso per un viaggio: nei giorni del viaggio e in tutto (voli, hotel e prenotazioni pagati prima compresi).
+func tripTotals(_ trip: Trip, _ expenses: [Expense]) -> (here: Double, total: Double) {
+    let mine = expenses.filter { $0.tripID == trip.uid }
+    return (mine.filter { trip.contains($0.date) }.reduce(0) { $0 + $1.myAmount }, mine.reduce(0) { $0 + $1.myAmount })
+}
+
+/// Riquadro del viaggio in corso: giorno, speso, cambio di oggi e totale della vacanza.
 struct TripHomeCard: View {
     let trip: Trip
     let expenses: [Expense]
+    @State private var rate: Double = 0
 
     var body: some View {
-        let mine = expenses.filter { $0.tripID == trip.uid }.reduce(0) { $0 + $1.myAmount }
+        let t = tripTotals(trip, expenses)
         let cal = Calendar.current
-        let total = (cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: trip.endDate)).day ?? 0) + 1
-        let today = min((cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: Date())).day ?? 0) + 1, total)
+        let days = (cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: trip.endDate)).day ?? 0) + 1
+        let today = min((cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: Date())).day ?? 0) + 1, days)
         VStack(alignment: .leading, spacing: 8) {
-            Label(trip.name, systemImage: "airplane").font(.headline)
-            Text("\(dayText(trip.startDate)) – \(dayText(trip.endDate)) · giorno \(today) di \(total)").font(.caption).opacity(0.85)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(trip.name, systemImage: "airplane").font(.headline).lineLimit(1)
+                    Text("\(dayText(trip.startDate)) – \(dayText(trip.endDate)) · giorno \(today) di \(days)").font(.caption).opacity(0.85)
+                    Text("Speso **\(eur(t.here))**").font(.caption)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 3) {
+                    if trip.isForeign && rate > 0 {
+                        Text("1 € = \(rate.formatted(.number.precision(.fractionLength(2)))) \(trip.currency)")
+                            .font(.caption2.bold()).padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(.white.opacity(0.2), in: Capsule())
+                    }
+                    Text("Totale vacanza").font(.caption2).opacity(0.85)
+                    Text(eur(t.total)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
             if trip.budget > 0 {
-                ProgressView(value: min(mine, trip.budget), total: trip.budget).tint(.white)
-                HStack {
-                    Text("Speso **\(eur(mine))**")
-                    Spacer()
-                    Text(mine <= trip.budget ? "Restano \(eur(trip.budget - mine))" : "Budget superato di \(eur(mine - trip.budget))")
-                }.font(.caption)
-            } else {
-                Text("Speso **\(eur(mine))**").font(.caption)
+                ProgressView(value: min(t.total, trip.budget), total: trip.budget).tint(.white)
+                Text(t.total <= trip.budget ? "Restano \(eur(trip.budget - t.total)) del budget" : "Budget superato di \(eur(t.total - trip.budget))")
+                    .font(.caption)
             }
         }
         .foregroundStyle(.white).padding(.vertical, 4)
+        .task(id: trip.currency) {
+            // Cambio di oggi della BCE; senza rete resta l'ultimo usato nel viaggio.
+            rate = trip.lastRate
+            if trip.isForeign, let r = await Rates.rate(for: trip.currency) { rate = r }
+        }
     }
 }

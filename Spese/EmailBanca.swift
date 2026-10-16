@@ -179,7 +179,7 @@ func matchRecurringPayment(amount: Double, when: Date, ctx: ModelContext) -> Str
 /// Azione per l'automazione "Email" di Comandi rapidi: legge l'email della banca e registra il movimento.
 struct AddFromBankEmailIntent: AppIntent {
     static let title: LocalizedStringResource = "Leggi email della banca"
-    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) o di PayPal (rata di Paga a rate) e registra il movimento in Spese.")
+    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) di PayPal (rata di Paga a rate) o di Klarna (prossimo pagamento) e registra il movimento in Spese.")
     static let openAppWhenRun = false
 
     @Parameter(title: "Oggetto", default: "") var subject: String
@@ -193,6 +193,21 @@ struct AddFromBankEmailIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let excerpt = String((subject + " — " + body).prefix(300))
         let entry = ApplePayLog.begin(amount: excerpt, merchant: "", source: "Email")
+        // Email di Klarna che annuncia il prossimo addebito di una rata.
+        if let k = parseKlarnaEmail(subject: subject, body: body) {
+            do {
+                let ctx = SharedStore.container.mainContext
+                let result = try recordKlarnaPayment(k, ctx: ctx)
+                ApplePayLog.finish(entry, result)
+                updateWidgetSnapshot(ctx)
+                runAutoBackup(ctx)
+                notify("Klarna", result)
+            } catch {
+                ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
+                throw error
+            }
+            return .result()
+        }
         // Email di PayPal per una rata di "Paga a rate".
         if let p = parsePayPalInstallmentEmail(subject: subject, body: body) {
             do {
