@@ -13,6 +13,7 @@ struct ExpenseRow: View {
 
     var body: some View {
         let e = expense
+        let owe = e.paidByMe ? 0 : e.myAmount   // la mia parte di una spesa pagata da altri
         HStack(spacing: 12) {
             if e.planProvider.isEmpty, e.categoryRaw == otherCategory, let emoji = otherEmoji(e.note) {
                 Text(emoji).font(.title3)
@@ -25,17 +26,26 @@ struct ExpenseRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
-                let shown = rowDetail(detail, note: e.note, category: e.categoryRaw)
-                if !shown.isEmpty { Text(shown).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                if !e.paidByMe {
+                    // Pagata da un'altra persona: chi ha pagato e quanto le devo.
+                    (Text("Pagato da \(e.paidBy)")
+                     + (owe > 0 ? Text(" · ") + Text("devi \(eur(owe))").bold().foregroundColor(.orange) : Text("")))
+                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    let shown = rowDetail(detail, note: e.note, category: e.categoryRaw)
+                    if !shown.isEmpty { Text(shown).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                }
                 if let trip { TripBadge(name: trip.name) }
                 if e.owedAmount > 0 && e.tripID.isEmpty { OwedBadge(expense: e) }
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(e.needsAmount ? "Da completare" : eur(e.amount))
+                Text(e.needsAmount ? "Da completare" : eur(owe > 0 ? owe : e.amount))
                     .font(e.needsAmount ? .caption.bold() : .body.bold())
                     .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
-                if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
+                if owe > 0 {
+                    Text("di \(eur(e.amount))").font(.caption).foregroundStyle(.secondary)
+                } else if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
                     Text(e.originalAmount.formatted(.currency(code: e.originalCurrency))).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -412,7 +422,7 @@ struct HomeView: View {
             HStack {
                 Text(isFuture ? "In arrivo questo giorno" : (isToday ? "Spese di oggi" : "Spese del giorno"))
                 Spacer()
-                Text(eur(list.reduce(0) { $0 + $1.amount } + dayRecurring.reduce(0) { $0 + $1.amount }))
+                Text(eur(list.reduce(0) { $0 + ($1.paidByMe ? $1.amount : $1.myAmount) } + dayRecurring.reduce(0) { $0 + $1.amount }))
             }
         }
     }
