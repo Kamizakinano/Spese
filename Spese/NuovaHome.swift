@@ -14,7 +14,10 @@ struct ExpenseRow: View {
     var body: some View {
         let e = expense
         HStack(spacing: 12) {
-            if e.planProvider.isEmpty {
+            if e.planProvider.isEmpty, e.categoryRaw == otherCategory, let emoji = otherEmoji(e.note) {
+                Text(emoji).font(.title3)
+                    .frame(width: 40, height: 40).background(look.color.opacity(0.14), in: Circle())
+            } else if e.planProvider.isEmpty {
                 Image(systemName: look.icon).font(.body.weight(.semibold)).foregroundStyle(look.color)
                     .frame(width: 40, height: 40).background(look.color.opacity(0.14), in: Circle())
             } else {

@@ -91,7 +91,15 @@ struct AddExpenseView: View {
                 }
                 Section {
                     DatePicker(isPlan ? "Prossimo addebito" : "Data", selection: $date, displayedComponents: .date)
-                    TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
+                    if !isPlan && catName == otherCategory {
+                        // "Altro": si scrive a cosa si riferisce e l'app sceglie l'emoji.
+                        HStack {
+                            Text(otherEmoji(note) ?? "❔").font(.title2)
+                            TextField("A cosa si riferisce? (es. regalo, parrucchiere)", text: $note)
+                        }
+                    } else {
+                        TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
+                    }
                     NoteSuggestionsRow(typed: note, expenses: all) { s in
                         note = s.note
                         if cats.contains(where: { $0.name == s.category }) { catName = s.category }
@@ -298,6 +306,9 @@ struct AddExpenseView: View {
                                       name: name.isEmpty ? provider : name, provider: provider) { ctx.insert(e) }
             dismiss()
             return
+        }
+        if editing == nil && catName == otherCategory && note.trimmingCharacters(in: .whitespaces).isEmpty {
+            error = "Scrivi a cosa si riferisce la spesa."; return
         }
         let t = tag.trimmingCharacters(in: .whitespaces)
         var owed = shared ? (parseAmount(owedText) ?? 0) : 0
