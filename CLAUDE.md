@@ -44,6 +44,7 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 - La 2.36 è in `main` (build 60). La 2.37 (build 61) e la **2.38** sono sul ramo `claude/eloquent-feynman-wxngiu`: se l'utente conferma che funziona, PR "Versione 2.38 (già provata, build N) [skip ci]" con squash.
 - In attesa: un'**email vera dell'addebito del mutuo** (Intesa Sanpaolo). Quando arriva, controlla che `parseBankEmail` la legga come spesa con importo e data giusti e aggiungi una prova in `SpeseTests/EmailBancaTests.swift`.
+- In attesa: **email Klarna "Prossimo pagamento programmato"** (Gmail). L'utente manderà il testo intero. Esempio dalla notifica: "Il pagamento di 26,28 € per 3DJake sarà addebitato il 17 ottobre 2026" / "Assicurati di avere 26,28 € disponibili sulla tua carta prima del 17 ottobre 2026". Idea approvata: leggerla col Comando Rapido come PayPal; se la rata Klarna c'è già spostarla al giorno giusto, altrimenti aggiungerla come spesa in arrivo (categoria rate, Klarna). La notifica dell'app Klarna non è leggibile dai Comandi Rapidi. Da fare al ritorno dal viaggio, insieme ai rinnovi PayPal.
 - Se la CI dice "L'app si è chiusa da sola (crash)", leggi le annotazioni: ora contengono il motivo e le righe del codice. È già successo due volte senza cambiare il codice (2.29 e 2.35): un nuovo tentativo è passato.
 
 Idee rimaste in sospeso: barre per categoria nelle Statistiche; versione Android (andrebbe riscritta); rinnovi PayPal da email (l'utente manderà un esempio).
