@@ -6,6 +6,7 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 - Rispondi **in italiano** e **in breve**.
 - Ogni proposta o suggerimento di modifica va **con un'immagine**: un'anteprima della schermata (HTML renderizzato in PNG con Playwright e mandato con SendUserFile). Per le correzioni usa "prima / dopo". Le anteprime vanno disegnate come un iPhone vero, con Dynamic Island, barra in basso e linea Home, e senza zone vuote.
+- Le anteprime si possono mandare sempre, anche quando l'utente non può aggiornare l'app (es. in viaggio).
 - **Accumula le richieste** e non iniziare finché l'utente non scrive **"parti"** o **"procedi"**.
 - Quando citi un sito o una pagina, **metti sempre il link**.
 - Di' sempre se le schermate sono ricostruite e se i numeri sono di esempio.
