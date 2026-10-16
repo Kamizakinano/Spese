@@ -200,6 +200,7 @@ struct HomeView: View {
                     Section {
                         NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
                             .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        if t.isForeign { TripPriceCheck(trip: t) }
                         Button { tripAdding = t } label: {
                             Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
                         }

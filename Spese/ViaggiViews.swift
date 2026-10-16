@@ -570,3 +570,41 @@ struct TripHomeCard: View {
         }
     }
 }
+
+/// Prova prezzi: scrivi un prezzo nella moneta del viaggio e vedi subito quanto costa in euro. Non registra nulla.
+struct TripPriceCheck: View {
+    let trip: Trip
+    @State private var text = ""
+    @State private var rate: Double = 0
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "dollarsign.arrow.circlepath").foregroundStyle(tripBlue)
+            HStack(spacing: 4) {
+                TextField("Prezzo", text: $text).keyboardType(.decimalPad).focused($focused)
+                Text(trip.currency).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tripBlue.opacity(0.6)))
+            Text("=").foregroundStyle(.secondary)
+            Text(priceInEuro(text, rate: rate).map(eur) ?? "– €")
+                .font(.headline).foregroundStyle(tripBlue).lineLimit(1).minimumScaleFactor(0.7)
+                .frame(minWidth: 80, alignment: .trailing)
+        }
+        .accessibilityElement(children: .contain)
+        .toolbar {
+            if focused { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Fine") { focused = false } } }
+        }
+        .task(id: trip.currency) {
+            rate = trip.lastRate
+            if let r = await Rates.rate(for: trip.currency) { rate = r }
+        }
+    }
+}
+
+/// Quanto vale in euro un prezzo scritto nella moneta del viaggio (1 € = rate). nil se manca qualcosa.
+func priceInEuro(_ text: String, rate: Double) -> Double? {
+    guard rate > 0, let a = parseAmount(text), a > 0 else { return nil }
+    return (a / rate * 100).rounded() / 100
+}

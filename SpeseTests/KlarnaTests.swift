@@ -116,4 +116,10 @@ final class KlarnaTests: XCTestCase {
         XCTAssertEqual(tot.here, 12.36, accuracy: 0.001)
         XCTAssertEqual(tot.total, 101.36, accuracy: 0.001)
     }
+
+    func testProvaPrezzi() {
+        XCTAssertEqual(priceInEuro("45,90", rate: 4.37) ?? 0, 10.50, accuracy: 0.001)
+        XCTAssertNil(priceInEuro("", rate: 4.37))
+        XCTAssertNil(priceInEuro("10", rate: 0))
+    }
 }
