@@ -23,6 +23,7 @@ struct ContiView: View {
     @State private var showMove = false
     @State private var editingIncome: Income?
     @State private var showBank = false
+    @State private var showCount = false
     @State private var showCash = false
 
     private var ledger: Ledger { Ledger(incomes: incomes, expenses: all, moves: moves, cash: cashMoves, account: accounts.first, payments: payments) }
@@ -121,6 +122,17 @@ struct ContiView: View {
                 }
 
                 Section {
+                    // Saldi veri di carta e contanti: trova le spese non segnate.
+                    Button { showCount = true } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Conteggio veloce").foregroundStyle(.primary)
+                                Text("Controlla carta e contanti con quelli veri").font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "scalemass").foregroundStyle(Theme.accent) }
+                    }
+                }
+                Section {
                     NavigationLink { IncomesView() } label: {
                         Label { Text("Entrate e stipendio") } icon: { Image(systemName: "arrow.down.circle").foregroundStyle(Theme.accent) }
                     }
@@ -136,6 +148,7 @@ struct ContiView: View {
                 }
             }
             .navigationTitle("Conti").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showCount) { QuickCountView() }
             .navigationDestination(isPresented: $showBank) { BankView() }
             .navigationDestination(isPresented: $showCash) { CashView() }
             .sheet(isPresented: $showMove) { CashMoveEditor(kind: kind, maxCash: cash) }
