@@ -115,6 +115,7 @@ struct ForecastSection: View {
     @Query private var cash: [CashMove]
     @Query private var accounts: [Account]
     @Query private var payments: [TripPayment]
+    @Query private var recurring: [Recurring]
 
     private struct Point: Identifiable { let date: Date; let value: Double; let forecast: Bool; var id: String { "\(date)\(forecast)" } }
 
@@ -124,7 +125,8 @@ struct ForecastSection: View {
         if let p = d.period {
             let soon = statExpenses(raw, trips: trips).filter { $0.date >= Ledger.endOfToday && $0.date < p.end && $0.paidByMe }
                 .reduce(0) { $0 + $1.myAmount }
-            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon)
+            let rec = recurringDue(recurring, expenses: raw, before: p.end)
+            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon + rec)
             Section("Previsione") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")
@@ -133,7 +135,15 @@ struct ForecastSection: View {
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Spendi in media \(eur(f.avgPerDay)) al giorno, il budget è \(eur(f.budgetPerDay))")
                         .font(.footnote).opacity(0.85)
-                    Text("Conta tutte le spese; quando incassi un \"Ti devono\" la parte restituita si toglie.")
+                    // Il conto voce per voce.
+                    VStack(spacing: 3) {
+                        line("Disponibile oggi", f.available)
+                        line("Spese di tutti i giorni (\(f.daysLeft) gg)", -f.avgPerDay * Double(f.daysLeft))
+                        if soon > 0 { line("Rate e spese già in arrivo", -soon) }
+                        if rec > 0 { line("Mutuo, ricorrenti e abbonamenti", -rec) }
+                    }
+                    .font(.caption).padding(.top, 6)
+                    Text("Quando incassi un \"Ti devono\" la parte restituita si toglie.")
                         .font(.caption).opacity(0.75)
                 }
                 .foregroundStyle(.white).padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -160,6 +170,10 @@ struct ForecastSection: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func line(_ label: String, _ v: Double) -> some View {
+        HStack { Text(label); Spacer(); Text((v < 0 ? "− " : "") + eur(abs(v))).bold() }
     }
 
     private func points(_ d: PeriodData, _ f: Forecast) -> [Point] {
@@ -341,4 +355,19 @@ struct SpendingCalendarView: View {
         month = cal.date(byAdding: .month, value: n, to: month) ?? month
         selected = nil
     }
+}
+
+/// Spese ricorrenti e abbonamenti (mutuo, bollette fisse…) che arrivano da domani fino a `end` escluso,
+/// senza quelli già inseriti a mano come spesa.
+func recurringDue(_ recurring: [Recurring], expenses: [Expense], before end: Date, now: Date = Date()) -> Double {
+    let cal = Calendar.current
+    let from = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now
+    var total = 0.0
+    for r in recurring {
+        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end)
+        where d >= from && d < end && !recurringCovered(name: r.name, on: d, expenses: expenses) {
+            total += r.amount
+        }
+    }
+    return total
 }
