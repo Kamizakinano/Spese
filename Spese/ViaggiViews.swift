@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 private func money(_ v: Double, _ code: String) -> String { v.formatted(.currency(code: code)) }
 private func dayText(_ d: Date) -> String { d.formatted(.dateTime.day().month(.abbreviated)) }
@@ -68,7 +69,7 @@ struct TripEditor: View {
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(6 * 86400)
     @State private var budgetText = ""
-    @State private var countInStats = false
+    @State private var countInStats = true   // le spese del viaggio si pagano con lo stipendio: contano nel periodo
     @State private var people: [String] = []
     @State private var newPerson = ""
 
@@ -341,6 +342,10 @@ struct TripExpenseEditor: View {
     @State private var custom = false
     @State private var customTexts: [String: String] = [:]
     @State private var error = ""
+    @State private var receipt: Data?            // foto dello scontrino (o del locale)
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showScanner = false
+    @State private var showReceipt = false
 
     private var rate: Double? { parseAmount(rateText).flatMap { $0 > 0 ? $0 : nil } }
     private var entered: Double? { parseAmount(amountText).flatMap { $0 > 0 ? $0 : nil } }
@@ -415,7 +420,40 @@ struct TripExpenseEditor: View {
                         }.pickerStyle(.segmented)
                     }
                 }
+                Section("Scontrino") {
+                    if let receipt, let img = UIImage(data: receipt) {
+                        Button { showReceipt = true } label: {
+                            Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180)
+                                .clipShape(RoundedRectangle(cornerRadius: 8)).frame(maxWidth: .infinity)
+                        }
+                        .accessibilityLabel("Foto dello scontrino, tocca per ingrandire")
+                        Button("Rimuovi la foto", role: .destructive) { self.receipt = nil }
+                    }
+                    Button { showScanner = true } label: {
+                        Label(receipt == nil ? "Scatta foto" : "Rifai la foto", systemImage: "camera")
+                    }
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("Scegli dalla galleria", systemImage: "photo")
+                    }
+                }
                 if !error.isEmpty { Text(error).font(.footnote).foregroundStyle(.red) }
+            }
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let d = try? await item.loadTransferable(type: Data.self), let img = UIImage(data: d) {
+                        receipt = await Task.detached { compressReceipt(img) }.value
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showScanner) {
+                DocumentScanner { imgs in
+                    let first = imgs.first
+                    Task { receipt = await Task.detached { compressReceipt(first) }.value }
+                }.ignoresSafeArea()
+            }
+            .sheet(isPresented: $showReceipt) {
+                if let receipt, let img = UIImage(data: receipt) { ReceiptViewer(image: img) }
             }
             .navigationTitle(editing == nil ? "Spesa del viaggio" : "Modifica spesa")
             .navigationBarTitleDisplayMode(.inline)
@@ -437,6 +475,7 @@ struct TripExpenseEditor: View {
         if trip.lastRate > 0 { rateText = String(format: "%.4f", trip.lastRate).replacingOccurrences(of: ".", with: ",") }
         guard let e = editing else { return }
         catName = e.categoryRaw; date = e.date; note = e.note; method = e.method; payer = e.payer
+        receipt = e.receipt
         if !e.originalCurrency.isEmpty {
             inLocal = true
             amountText = String(e.originalAmount).replacingOccurrences(of: ".", with: ",")
@@ -490,6 +529,7 @@ struct TripExpenseEditor: View {
         let x = editing ?? Expense(amount: e, categoryName: catName, date: date, note: note)
         x.amount = e; x.categoryRaw = catName; x.date = date; x.note = note
         x.tripID = trip.uid
+        if x.receipt != receipt { x.receipt = receipt }
         x.paidBy = payer == me ? "" : payer
         x.method = payer == me ? method : "carta"
         if inLocal && trip.isForeign, let a = entered, let r = rate {
