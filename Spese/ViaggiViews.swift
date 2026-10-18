@@ -163,6 +163,7 @@ struct TripDetailView: View {
     @State private var editingTrip = false
     @State private var editing: Expense?
     @State private var settling: Transfer?
+    @State private var viewing: UIImage?
 
     private var expenses: [Expense] { all.filter { $0.tripID == trip.uid } }
     private var payments: [TripPayment] { allPayments.filter { $0.tripID == trip.uid } }
@@ -180,6 +181,7 @@ struct TripDetailView: View {
             .filter { $0.total > 0 }.sorted { $0.total > $1.total }
     }
     private func label(_ n: String) -> String { n == me ? "Tu" : n }
+    private func catColor(_ n: String) -> Color { cats.first { $0.name == n }.map { Color(hex: $0.colorHex) } ?? tripBlue }
     /// La mia parte nella valuta locale (con il cambio di ogni spesa).
     private var localTotal: Double {
         var sum = 0.0
@@ -225,6 +227,27 @@ struct TripDetailView: View {
             if !trip.people.isEmpty {
                 Section {
                     if transfers.isEmpty { Text("Siete pari: nessuno deve soldi.").foregroundStyle(.secondary) }
+                    // In grande quello che riguarda me, con le spese da cui viene.
+                    ForEach(transfers.filter { $0.from == me || $0.to == me }) { t in
+                        let other = t.from == me ? t.to : t.from
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(t.from == me ? "Devi \(eur(t.amount)) a \(other)" : "\(other) ti deve \(eur(t.amount))")
+                                .font(.title3.bold()).foregroundStyle(t.from == me ? Color.orange : Theme.accent)
+                            DisclosureGroup("Da dove viene") {
+                                ForEach(tripDebtLines(expenses, with: other), id: \.expense.persistentModelID) { l in
+                                    HStack {
+                                        Text(l.expense.note.isEmpty ? l.expense.categoryRaw : l.expense.note).lineLimit(1)
+                                        Spacer()
+                                        Text(l.amount > 0 ? "devi \(eur(l.amount))" : "ti deve \(eur(-l.amount))")
+                                            .foregroundStyle(l.amount > 0 ? Color.orange : Theme.accent)
+                                    }
+                                    .font(.footnote)
+                                }
+                            }
+                            .font(.footnote)
+                        }
+                        .padding(.vertical, 4)
+                    }
                     ForEach(transfers) { t in
                         HStack {
                             Text("\(label(t.from)) → \(label(t.to))")
@@ -242,9 +265,36 @@ struct TripDetailView: View {
             }
 
             if !byCategory.isEmpty {
-                Section("Per categoria (la tua parte)") {
+                Section("Dove sono andati i soldi (la tua parte)") {
+                    let top = byCategory.first?.total ?? 1
                     ForEach(byCategory) { c in
-                        HStack { Text(c.name); Spacer(); Text(eur(c.total)).bold() }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack { Text(c.name); Spacer(); Text(eur(c.total)).bold() }
+                            ProgressView(value: c.total, total: max(top, 0.01)).tint(catColor(c.name))
+                        }
+                    }
+                    if let big = expenses.max(by: { $0.myAmount < $1.myAmount }) {
+                        LabeledContent("La spesa più cara", value: "\(big.note.isEmpty ? big.categoryRaw : big.note) · \(eur(big.myAmount))")
+                            .font(.footnote)
+                    }
+                }
+            }
+
+            let photos = expenses.filter { $0.receipt != nil }
+            if !photos.isEmpty {
+                Section("Scontrini e foto") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(photos) { e in
+                                if let d = e.receipt, let img = UIImage(data: d) {
+                                    Button { viewing = img } label: {
+                                        Image(uiImage: img).resizable().scaledToFill().frame(width: 70, height: 90)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .accessibilityLabel("Foto di \(e.note.isEmpty ? e.categoryRaw : e.note)")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -296,6 +346,9 @@ struct TripDetailView: View {
         .sheet(isPresented: $adding) { TripExpenseEditor(trip: trip, editing: nil) }
         .sheet(item: $editing) { TripExpenseEditor(trip: trip, editing: $0) }
         .sheet(isPresented: $editingTrip) { TripEditor(trip: trip) }
+        .sheet(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
+            if let viewing { ReceiptViewer(image: viewing) }
+        }
         .confirmationDialog(settling.map { "\(label($0.from)) ha dato \(eur($0.amount)) a \(label($0.to))?" } ?? "",
                             isPresented: Binding(get: { settling != nil }, set: { if !$0 { settling = nil } }),
                             titleVisibility: .visible) {
@@ -647,4 +700,19 @@ struct TripPriceCheck: View {
 func priceInEuro(_ text: String, rate: Double) -> Double? {
     guard rate > 0, let a = parseAmount(text), a > 0 else { return nil }
     return (a / rate * 100).rounded() / 100
+}
+
+
+/// Una spesa del viaggio e quanto pesa nel conto con un'altra persona (+ = io le devo, − = lei mi deve).
+struct TripDebtLine { let expense: Expense; let amount: Double }
+
+/// Le spese da cui viene il debito tra me e `other`: quelle pagate da lei con una mia parte,
+/// e quelle pagate da me con una sua parte.
+func tripDebtLines(_ expenses: [Expense], with other: String) -> [TripDebtLine] {
+    expenses.compactMap { e in
+        if e.paidBy == other, e.myAmount > 0.004 { return TripDebtLine(expense: e, amount: e.myAmount) }
+        if e.paidByMe, let s = e.shares[other], s > 0.004 { return TripDebtLine(expense: e, amount: -s) }
+        return nil
+    }
+    .sorted { $0.expense.date < $1.expense.date }
 }

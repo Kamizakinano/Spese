@@ -127,6 +127,17 @@ func statExpenses(_ all: [Expense], trips: [Trip]) -> [Expense] {
     return out.isEmpty ? all : all.filter { !out.contains($0.tripID) }
 }
 
+/// Un viaggio finito da poco (negli ultimi `days` giorni), per mostrarne il riepilogo in Home.
+func recentlyEndedTrip(_ trips: [Trip], now: Date = Date(), days: Int = 3) -> Trip? {
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: now)
+    return trips.filter { t in
+        let end = cal.startOfDay(for: t.endDate)
+        guard let gap = cal.dateComponents([.day], from: end, to: today).day else { return false }
+        return gap >= 1 && gap <= days
+    }.max { $0.endDate < $1.endDate }
+}
+
 /// Il viaggio in corso oggi, se c'è.
 func activeTrip(_ trips: [Trip], now: Date = Date()) -> Trip? {
     trips.filter { $0.contains(now) }.sorted { $0.startDate > $1.startDate }.first

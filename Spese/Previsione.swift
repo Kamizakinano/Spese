@@ -228,8 +228,10 @@ struct ComparisonSection: View {
                 let now = changes.reduce(0) { $0 + $1.now }, before = changes.reduce(0) { $0 + $1.before }
                 let total = CategoryChange(name: "Totale", now: now, before: before)
                 Section {
+                    let top = changes.map { max($0.now, $0.before) }.max() ?? 1
                     ForEach(changes) { c in
                         let l = look(c.name)
+                        VStack(spacing: 6) {
                         HStack(spacing: 12) {
                             Image(systemName: l.icon).foregroundStyle(.white)
                                 .frame(width: 32, height: 32).background(l.color, in: RoundedRectangle(cornerRadius: 8))
@@ -240,6 +242,9 @@ struct ComparisonSection: View {
                             Spacer()
                             badge(c)
                         }
+                        // Barra: quanto pesa la categoria in questo periodo.
+                        ProgressView(value: c.now, total: max(top, 0.01)).tint(l.color)
+                        }
                     }
                     HStack {
                         Text("Totale").bold()
@@ -248,7 +253,7 @@ struct ComparisonSection: View {
                         badge(total)
                     }
                 } header: {
-                    Text("Rispetto al periodo scorso")
+                    Text("Per categoria, rispetto al periodo scorso")
                 } footer: {
                     Text("Confronto con gli stessi giorni dopo lo stipendio precedente.")
                 }

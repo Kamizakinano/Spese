@@ -195,6 +195,15 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
+                // Per tre giorni dopo il rientro: com'è andato il viaggio.
+                if activeTrip(trips) == nil, let t = recentlyEndedTrip(trips) {
+                    Section {
+                        NavigationLink { TripDetailView(trip: t) } label: {
+                            Label("Com'è andato il viaggio a \(t.name)? · \(eur(tripTotals(t, all).total))", systemImage: "airplane.arrival")
+                                .foregroundStyle(tripBlue)
+                        }
+                    }
+                }
                 // Nei giorni del viaggio il riquadro sta in alto, per aggiungere le spese al volo.
                 if let t = activeTrip(trips) {
                     Section {
