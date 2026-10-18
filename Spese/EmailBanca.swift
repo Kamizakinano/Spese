@@ -29,7 +29,7 @@ private func firstMatch(_ pattern: String, in text: String) -> [String]? {
 
 /// Legge oggetto e testo di un'email della banca (scritta come quelle di Intesa Sanpaolo):
 /// tipo di movimento, importo, esercente e data. nil se non parla di un movimento di soldi.
-func parseBankEmail(subject: String, body: String) -> BankEmail? {
+func parseBankEmail(subject: String, body: String, now: Date = Date()) -> BankEmail? {
     let text = (subject + "\n" + body).replacingOccurrences(of: "\u{00A0}", with: " ")
     let low = text.lowercased()
 
@@ -64,6 +64,13 @@ func parseBankEmail(subject: String, body: String) -> BankEmail? {
     if let d = firstMatch(#"(\d{1,2})[./](\d{1,2})[./](\d{4})"#, in: text),
        let dd = Int(d[1]), let mm = Int(d[2]), let yy = Int(d[3]) {
         date = Calendar.current.date(from: DateComponents(year: yy, month: mm, day: dd, hour: 12))
+    } else if let d = firstMatch(#"in data\s+(\d{1,2})[./](\d{1,2})(?![./]?\d)"#, in: text),
+              let dd = Int(d[1]), let mm = Int(d[2]), (1...12).contains(mm) {
+        // "in data 18.10" senza anno: quest'anno, o l'anno scorso se sarebbe nel futuro (email di fine dicembre letta a gennaio).
+        let cal = Calendar.current
+        var yy = cal.component(.year, from: now)
+        if let c = cal.date(from: DateComponents(year: yy, month: mm, day: dd, hour: 12)), c > now.addingTimeInterval(86400) { yy -= 1 }
+        date = cal.date(from: DateComponents(year: yy, month: mm, day: dd, hour: 12))
     }
 
     let salary = kind == .income && ["stipendio", "emolument", "retribuzione", "busta paga"].contains(where: low.contains)
@@ -97,11 +104,11 @@ func recordBankEmail(_ e: BankEmail, ctx: ModelContext, now: Date = Date()) thro
             try ctx.save()
             return msg
         }
-        // Già entrata da Apple Pay (stesso importo, pochi minuti prima o dopo)? Non si conta due volte.
-        let near = ((try? ctx.fetch(FetchDescriptor<Expense>())) ?? []).contains {
-            abs($0.amount - e.amount) < 0.005 && abs($0.date.timeIntervalSince(when)) < 30 * 60
+        // Già entrata da Apple Pay (stesso importo, poco prima, o stesso negozio entro due giorni)? Non si conta due volte.
+        if isLikelyDuplicate(amount: e.amount, merchant: e.merchant, when: when,
+                             expenses: (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []) {
+            return "Già registrata (stesso pagamento): ignorata"
         }
-        if near { return "Già registrata (stesso importo, stessa ora): ignorata" }
         let cats = (try? ctx.fetch(FetchDescriptor<CategoryItem>(sortBy: [SortDescriptor(\.order)]))) ?? []
         let cat = guessCategory(merchant: e.merchant, available: cats.map { $0.name })
         let x = Expense(amount: e.amount, categoryName: cat, date: when, note: e.merchant)
@@ -242,5 +249,21 @@ struct AddFromBankEmailIntent: AppIntent {
             throw error
         }
         return .result()
+    }
+}
+
+/// Lo stesso pagamento è già nell'app (arrivato da Wallet o dall'email della banca)?
+/// Sì se ha lo stesso importo e: è a meno di mezz'ora, oppure è entro due giorni e il negozio
+/// ha la stessa prima parola (es. "LIDL 2070, VILLA CARCINA" e "Lidl"). Le rate non contano.
+func isLikelyDuplicate(amount: Double, merchant: String, when: Date, expenses: [Expense]) -> Bool {
+    func key(_ s: String) -> String {
+        s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).first { $0.count >= 3 } ?? ""
+    }
+    let k = key(merchant)
+    return expenses.contains { x in
+        guard x.planID.isEmpty, abs(x.amount - amount) < 0.005 else { return false }
+        let dt = abs(x.date.timeIntervalSince(when))
+        if dt < 30 * 60 { return true }
+        return dt < 48 * 3600 && !k.isEmpty && key(x.note) == k
     }
 }

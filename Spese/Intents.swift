@@ -35,6 +35,41 @@ struct AddExpenseIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        try await addCardPayment(amount: amount, merchant: merchant, method: method)
+        return .result()
+    }
+}
+
+/// Azione per l'automazione "Transazione" di Wallet: riceve l'importo con la sua valuta così com'è,
+/// senza passare dal testo (con "Aggiungi spesa" a volte Comandi rapidi si fermava prima di chiamare l'app).
+struct WalletPaymentIntent: AppIntent {
+    static let title: LocalizedStringResource = "Registra pagamento Wallet"
+    static let description = IntentDescription("Registra in Spese un pagamento con Apple Pay: usa Importo ed Esercente della transazione di Wallet.")
+    static let openAppWhenRun = false
+
+    @Parameter(title: "Importo") var amount: IntentCurrencyAmount
+    @Parameter(title: "Esercente", default: "") var merchant: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Registra pagamento Wallet di \(\.$amount) da \(\.$merchant)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await addCardPayment(amount: walletAmountText(amount.amount, currency: amount.currencyCode), merchant: merchant, method: .carta)
+        return .result()
+    }
+}
+
+/// "12,50 EUR" / "32,73 PLN": l'importo di Wallet come testo, con la valuta (serve per i viaggi all'estero).
+func walletAmountText(_ value: Decimal, currency: String) -> String {
+    let n = NSDecimalNumber(decimal: value).doubleValue
+    return String(format: "%.2f", n).replacingOccurrences(of: ".", with: ",") + " " + (currency.isEmpty ? "EUR" : currency.uppercased())
+}
+
+/// Registra un pagamento con carta arrivato da Comandi rapidi (Apple Pay o testo).
+@MainActor
+func addCardPayment(amount: String, merchant: String, method: PayMethod) async throws {
         // Prima di tutto si annota cosa è arrivato: se poi qualcosa va storto, il registro lo mostra.
         let entry = ApplePayLog.begin(amount: amount, merchant: merchant)
         let name = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,6 +82,12 @@ struct AddExpenseIntent: AppIntent {
             let ctx = SharedStore.container.mainContext
             let cats = (try? ctx.fetch(FetchDescriptor<CategoryItem>(sortBy: [SortDescriptor(\.order)]))) ?? []
             let cat = guessCategory(merchant: name, available: cats.map { $0.name })
+            // Già entrata dall'email della banca? Non si conta due volte.
+            if let v = value, looksLikeEuro(amount) || !amount.contains(where: \.isLetter),
+               isLikelyDuplicate(amount: v, merchant: name, when: Date(), expenses: (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []) {
+                ApplePayLog.finish(entry, "Già registrata (stesso pagamento): ignorata")
+                return
+            }
             let e = Expense(amount: value ?? 0, categoryName: cat, date: Date(), note: name)
             e.method = method.rawValue
             // Importo illeggibile: la spesa si salva lo stesso e resta "da completare" in Home.
@@ -74,8 +115,6 @@ struct AddExpenseIntent: AppIntent {
             ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
             throw error
         }
-        return .result()
-    }
 }
 
 /// Se oggi c'è un viaggio, mette la spesa nel viaggio. Se il viaggio è all'estero e l'importo
@@ -100,6 +139,9 @@ struct SpeseShortcuts: AppShortcutsProvider {
         AppShortcut(intent: AddExpenseIntent(),
                     phrases: ["Aggiungi spesa in \(.applicationName)", "Registra una spesa in \(.applicationName)"],
                     shortTitle: "Aggiungi spesa", systemImageName: "creditcard")
+        AppShortcut(intent: WalletPaymentIntent(),
+                    phrases: ["Registra pagamento Wallet in \(.applicationName)"],
+                    shortTitle: "Registra pagamento Wallet", systemImageName: "wallet.pass")
         AppShortcut(intent: QuickAddIntent(),
                     phrases: ["Spesa veloce in \(.applicationName)", "Nuova spesa in \(.applicationName)"],
                     shortTitle: "Spesa veloce", systemImageName: "plus.circle")
