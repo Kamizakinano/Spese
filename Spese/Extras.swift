@@ -22,6 +22,7 @@ struct AddExpenseView: View {
     @State private var provider = "PayPal"
     @State private var rateCount = 3
     @State private var ratePaid = 0
+    @State private var rateTexts: [Int: String] = [:]   // importi delle rate scritti a mano
     /// Nuovo acquisto a rate: l'importo è il totale e si creano le rate da pagare.
     private var isPlan: Bool { editing == nil && catName == installmentCategory }
     @AppStorage("lastMethod") private var lastMethod = "carta"
@@ -239,12 +240,30 @@ struct AddExpenseView: View {
             Stepper("Numero di rate: **\(rateCount)**", value: $rateCount, in: 2...48)
             Stepper("Rate già pagate: **\(ratePaid)**", value: $ratePaid, in: 0...(rateCount - 1))
             if let a = parseAmount(amountText), a > 0 {
-                let s = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
-                LabeledContent("Importo di ogni rata", value: eur(s.first?.amount ?? 0))
-                Text("Mancano **\(s.count) \(s.count == 1 ? "rata" : "rate")** · **\(eur(s.reduce(0) { $0 + $1.amount }))** alla fine")
-                ForEach(s.prefix(12), id: \.index) { r in
-                    LabeledContent("Rata \(r.index) · \(r.date.formatted(.dateTime.day().month(.abbreviated).year()))", value: eur(r.amount))
-                        .font(.footnote)
+                let base = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
+                let s = adjustedSchedule(base, fixed: fixedRates)
+                let target = base.reduce(0) { $0 + $1.amount }
+                let sum = s.reduce(0) { $0 + $1.amount }
+                Text("Mancano **\(s.count) \(s.count == 1 ? "rata" : "rate")** · **\(eur(target))** alla fine")
+                // Ogni rata si può scrivere a mano (es. un anticipo): le altre si dividono il resto.
+                ForEach(s.prefix(48), id: \.index) { r in
+                    HStack {
+                        Text("Rata \(r.index) · \(r.date.formatted(.dateTime.day().month(.abbreviated).year()))").font(.footnote)
+                        Spacer()
+                        TextField(amountString(r.amount), text: Binding(get: { rateTexts[r.index] ?? "" },
+                                                                         set: { rateTexts[r.index] = $0 }))
+                            .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 90)
+                            .font(.footnote.bold())
+                        Text("€").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if !fixedRates.isEmpty {
+                    if abs(sum - target) < 0.005 && s.allSatisfy({ $0.amount >= 0 }) {
+                        Label("Le rate fanno \(eur(sum)): torna col totale", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Theme.accent)
+                    } else {
+                        Label("Le rate fanno \(eur(sum)), ma il totale è \(eur(target))", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                    }
+                    Button("Rate tutte uguali") { rateTexts = [:] }.font(.footnote)
                 }
             }
         } header: {
@@ -253,7 +272,13 @@ struct AddExpenseView: View {
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             Text("L'importo è il totale dell'acquisto. Le rate già pagate non cambiano il saldo; le altre vanno in \"In arrivo\" e scendono dalla carta il giorno dell'addebito, una al mese.")
         }
-        .onChange(of: rateCount) { _, n in if ratePaid > n - 1 { ratePaid = n - 1 } }
+        .onChange(of: rateCount) { _, n in if ratePaid > n - 1 { ratePaid = n - 1 }; rateTexts = [:] }
+        .onChange(of: ratePaid) { _, _ in rateTexts = [:] }
+    }
+
+    /// Importi delle rate scritti a mano, per numero di rata.
+    private var fixedRates: [Int: Double] {
+        rateTexts.compactMapValues { t in parseAmount(t).flatMap { $0 >= 0 ? $0 : nil } }
     }
 
     private var refundQuestion: String {
@@ -302,8 +327,17 @@ struct AddExpenseView: View {
         guard let a = parseAmount(amountText), a > 0 else { error = "Inserisci l'importo."; return }
         if isPlan {
             let name = note.trimmingCharacters(in: .whitespaces)
+            let base = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
+            let custom = adjustedSchedule(base, fixed: fixedRates)
+            guard custom.allSatisfy({ $0.amount >= 0 }),
+                  abs(custom.reduce(0) { $0 + $1.amount } - base.reduce(0) { $0 + $1.amount }) < 0.005 else {
+                error = "Le rate non tornano col totale: correggile o tocca \"Rate tutte uguali\"."; return
+            }
             for e in makeInstallments(total: a, count: rateCount, paid: ratePaid, first: date,
-                                      name: name.isEmpty ? provider : name, provider: provider) { ctx.insert(e) }
+                                      name: name.isEmpty ? provider : name, provider: provider) {
+                if let r = custom.first(where: { $0.index == e.planIndex }) { e.amount = r.amount }
+                ctx.insert(e)
+            }
             dismiss()
             return
         }
