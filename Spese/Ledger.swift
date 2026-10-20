@@ -140,7 +140,7 @@ struct Ledger {
 
     /// Soldi miei usciti (positivo) o entrati (negativo) per i rimborsi dei viaggi, con carta o in contanti.
     static func myPayments(_ payments: [TripPayment], cash: Bool, from a: Date, to b: Date) -> Double {
-        payments.filter { ($0.method == "contanti") == cash && $0.date >= a && $0.date < b }.reduce(0) { sum, p in
+        payments.filter { $0.method != forgivenMethod && ($0.method == "contanti") == cash && $0.date >= a && $0.date < b }.reduce(0) { sum, p in
             if p.from == me { return sum + p.amount }
             if p.to == me { return sum - p.amount }
             return sum

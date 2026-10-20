@@ -11,8 +11,9 @@ final class FineViaggioTests: XCTestCase {
         let t = Trip(name: "Breslavia", currency: "PLN", startDate: d(2026, 10, 16), endDate: d(2026, 10, 17))
         XCTAssertNil(recentlyEndedTrip([t], now: d(2026, 10, 17)), "Il giorno del rientro il viaggio è ancora in corso")
         XCTAssertEqual(recentlyEndedTrip([t], now: d(2026, 10, 18))?.name, "Breslavia")
-        XCTAssertNotNil(recentlyEndedTrip([t], now: d(2026, 10, 20)))
-        XCTAssertNil(recentlyEndedTrip([t], now: d(2026, 10, 21)), "Dopo tre giorni sparisce")
+        XCTAssertNotNil(recentlyEndedTrip([t], now: d(2026, 10, 25)), "Resta finché non lo chiudi")
+        t.closed = true
+        XCTAssertNil(recentlyEndedTrip([t], now: d(2026, 10, 20)), "Chiuso: sparisce")
     }
 
     func testDaDoveVieneIlDebito() {
@@ -24,5 +25,14 @@ final class FineViaggioTests: XCTestCase {
         let lines = tripDebtLines([cena, taxi, mia], with: "Valentina")
         XCTAssertEqual(lines.map(\.amount), [12.36, -5])
         XCTAssertEqual(lines.reduce(0) { $0 + $1.amount }, 7.36, accuracy: 0.001)
+    }
+
+    func testSiamoPariNonToccaIlSaldo() {
+        let p = TripPayment(tripID: "x", from: "Valentina", to: "Io", amount: 18.54, date: Date())
+        p.method = forgivenMethod
+        XCTAssertEqual(Ledger.myPayments([p], cash: false, from: .distantPast, to: .distantFuture), 0)
+        XCTAssertEqual(Ledger.myPayments([p], cash: true, from: .distantPast, to: .distantFuture), 0)
+        let soldi = TripPayment(tripID: "x", from: "Valentina", to: "Io", amount: 18.54, date: Date())
+        XCTAssertEqual(Ledger.myPayments([soldi], cash: false, from: .distantPast, to: .distantFuture), -18.54, accuracy: 0.001)
     }
 }

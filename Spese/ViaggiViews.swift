@@ -716,3 +716,64 @@ func tripDebtLines(_ expenses: [Expense], with other: String) -> [TripDebtLine] 
     }
     .sorted { $0.expense.date < $1.expense.date }
 }
+
+/// Chiusura del viaggio dopo il rientro: chiede se i debiti con i compagni sono stati saldati.
+struct TripCloseView: View {
+    let trip: Trip
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    @Query private var all: [Expense]
+    @Query private var allPayments: [TripPayment]
+
+    private var expenses: [Expense] { all.filter { $0.tripID == trip.uid } }
+    private var mine: [Transfer] {
+        settleUp(tripBalances(expenses: expenses, payments: allPayments.filter { $0.tripID == trip.uid }))
+            .filter { $0.from == me || $0.to == me }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Totale vacanza", value: eur(tripTotals(trip, expenses).total))
+                }
+                ForEach(mine) { t in
+                    let other = t.from == me ? t.to : t.from
+                    Section {
+                        VStack(spacing: 4) {
+                            Text(t.from == me ? "Devi \(eur(t.amount)) a \(other)" : "\(other) ti deve \(eur(t.amount))").font(.headline)
+                            Text(t.from == me ? "Le hai dato i soldi?" : "Hai riscosso il debito?").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button("Sì, in contanti") { pay(t, "contanti") }
+                        Button("Sì, con bonifico / carta") { pay(t, "carta") }
+                        Button("No, siamo pari così") { pay(t, forgivenMethod) }.foregroundStyle(.orange)
+                    } footer: {
+                        Text("\"Siamo pari così\" chiude il conto senza soldi: il saldo non cambia.")
+                    }
+                }
+                Section {
+                    Button(mine.isEmpty ? "Chiudi il viaggio" : "Non ancora: chiudi e lascia il conto aperto") { close() }
+                } footer: {
+                    if !mine.isEmpty { Text("Il conto resta nel dettaglio del viaggio (Altro → Viaggi), con il tasto \"Saldato\".") }
+                }
+            }
+            .navigationTitle("Chiudi \(trip.name)").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } } }
+        }
+    }
+
+    private func pay(_ t: Transfer, _ method: String) {
+        let p = TripPayment(tripID: trip.uid, from: t.from, to: t.to, amount: t.amount, date: Date())
+        p.method = method
+        ctx.insert(p)
+        try? ctx.save()
+        if mine.isEmpty { close() }   // tutti i conti chiusi: si chiude anche il viaggio
+    }
+
+    private func close() {
+        trip.closed = true
+        try? ctx.save()
+        dismiss()
+    }
+}

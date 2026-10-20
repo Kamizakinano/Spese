@@ -16,6 +16,7 @@ let me = "Io"
     var countInStats: Bool = false // conta nelle statistiche, nei limiti e nei riepiloghi
     var peopleJSON: String = "[]" // compagni di viaggio (oltre a me)
     var lastRate: Double = 0      // ultimo cambio usato (1 € = lastRate)
+    var closed: Bool = false      // chiuso dopo il rientro: il riquadro in Home sparisce
     init(name: String, currency: String, startDate: Date, endDate: Date) {
         self.name = name; self.currency = currency; self.startDate = startDate; self.endDate = endDate
     }
@@ -127,16 +128,18 @@ func statExpenses(_ all: [Expense], trips: [Trip]) -> [Expense] {
     return out.isEmpty ? all : all.filter { !out.contains($0.tripID) }
 }
 
-/// Un viaggio finito da poco (negli ultimi `days` giorni), per mostrarne il riepilogo in Home.
-func recentlyEndedTrip(_ trips: [Trip], now: Date = Date(), days: Int = 3) -> Trip? {
+/// Un viaggio finito e non ancora chiuso (rientro negli ultimi `days` giorni), per mostrarlo in Home.
+func recentlyEndedTrip(_ trips: [Trip], now: Date = Date(), days: Int = 60) -> Trip? {
     let cal = Calendar.current
     let today = cal.startOfDay(for: now)
     return trips.filter { t in
-        let end = cal.startOfDay(for: t.endDate)
-        guard let gap = cal.dateComponents([.day], from: end, to: today).day else { return false }
+        guard !t.closed, let gap = cal.dateComponents([.day], from: cal.startOfDay(for: t.endDate), to: today).day else { return false }
         return gap >= 1 && gap <= days
     }.max { $0.endDate < $1.endDate }
 }
+
+/// Rimborso "siamo pari così": pareggia i conti del viaggio senza che passino soldi.
+let forgivenMethod = "pari"
 
 /// Il viaggio in corso oggi, se c'è.
 func activeTrip(_ trips: [Trip], now: Date = Date()) -> Trip? {

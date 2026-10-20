@@ -97,6 +97,7 @@ struct HomeView: View {
     @State private var editing: Expense?
     @State private var editingRecurring: Recurring?
     @State private var tripAdding: Trip?
+    @State private var closingTrip: Trip?
     @State private var cashCheck = false
     @State private var cashCheckSeen = Date()
     @State private var endedSummary: EndedPeriod?
@@ -202,6 +203,10 @@ struct HomeView: View {
                             Label("Com'è andato il viaggio a \(t.name)? · \(eur(tripTotals(t, all).total))", systemImage: "airplane.arrival")
                                 .foregroundStyle(tripBlue)
                         }
+                        Button { closingTrip = t } label: {
+                            Label("Chiudi il viaggio", systemImage: "checkmark.circle.fill").bold().frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(tripBlue)
                     }
                 }
                 // Nei giorni del viaggio il riquadro sta in alto, per aggiungere le spese al volo.
@@ -270,6 +275,7 @@ struct HomeView: View {
                 else { AddExpenseView(defaultDate: e.date, editing: e) }
             }
             .sheet(item: $tripAdding) { TripExpenseEditor(trip: $0, editing: nil) }
+            .sheet(item: $closingTrip) { TripCloseView(trip: $0) }
             .sheet(item: $editingRecurring) { r in RecurringEditor(editing: r) }
             .sheet(isPresented: $cashCheck, onDismiss: { cashCheckSeen = Date() }) { CashCheckView() }
             .sheet(isPresented: $showPeriod) { PayPeriodEditor() }

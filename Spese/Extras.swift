@@ -626,7 +626,7 @@ struct Backup: Codable {
         var planIndex: Int? = nil; var planCount: Int? = nil; var planTotal: Double? = nil
         var latitude: Double? = nil; var longitude: Double? = nil }
     struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
-        var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
+        var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double; var closed: Bool? = nil }
     struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
     struct I: Codable { var amount: Double; var saved: Double; var kind: String; var date: Date; var note: String
         var refundKey: String? = nil }
@@ -692,7 +692,7 @@ func backupData(_ ctx: ModelContext) -> Data? {
     b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank, refundKey: $0.refundKey) }
     b.cashStart = all(Account.self).first?.cashStart
     b.trips = all(Trip.self).map { Backup.T(uid: $0.uid, name: $0.name, currency: $0.currency, startDate: $0.startDate, endDate: $0.endDate,
-                                            budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate) }
+                                            budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate, closed: $0.closed) }
     b.payments = all(TripPayment.self).map { Backup.P(tripID: $0.tripID, from: $0.from, to: $0.to, amount: $0.amount, date: $0.date, method: $0.method) }
     b.debts = all(Debt.self).map { Backup.D(person: $0.person, amount: $0.amount, note: $0.note, category: $0.category,
                                             date: $0.date, paid: $0.paid, paidMethod: $0.paidMethod, paidDate: $0.paidDate) }
@@ -809,7 +809,7 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
     }
     for t in b.trips ?? [] {
         let x = Trip(name: t.name, currency: t.currency, startDate: t.startDate, endDate: t.endDate)
-        x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate
+        x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate; x.closed = t.closed ?? false
         ctx.insert(x)
     }
     for p in b.payments ?? [] {
