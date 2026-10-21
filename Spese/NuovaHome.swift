@@ -45,6 +45,9 @@ struct ExpenseRow: View {
                     .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
                 if owe > 0 {
                     Text("di \(eur(e.amount))").font(.caption).foregroundStyle(.secondary)
+                } else if refundedPart(e) > 0 {
+                    // "Ti devono" già restituito: per me conta solo la differenza.
+                    Text("per te \(eur(e.amount - refundedPart(e)))").font(.caption.bold()).foregroundStyle(Theme.accent)
                 } else if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
                     Text(e.originalAmount.formatted(.currency(code: e.originalCurrency))).font(.caption).foregroundStyle(.secondary)
                 }
@@ -128,7 +131,7 @@ struct HomeView: View {
     }
     private var daysLeftInPeriod: Int { period.map { max(daysLeft(until: $0.end), 1) } ?? 1 }
     private var spentTodayCash: Double {
-        all.filter { $0.paidByMe && cal.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount }
+        all.filter { $0.paidByMe && cal.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount - refundedPart($1) }
     }
     /// Budget di oggi (calcolato con i soldi di stamattina).
     private var todayBudget: Double {
@@ -143,7 +146,7 @@ struct HomeView: View {
         return max(available - upcomingTotal(before: p.end) - dailySave * d, 0) / d
     }
     private func spentOn(_ d: Date) -> Double {
-        statExpenses(all, trips: trips).filter { cal.isDate($0.date, inSameDayAs: d) }.reduce(0) { $0 + $1.myAmount }
+        statExpenses(all, trips: trips).filter { cal.isDate($0.date, inSameDayAs: d) }.reduce(0) { $0 + everydaySpend($1) }
     }
     private var dayExpenses: [Expense] {
         all.filter { cal.isDate($0.date, inSameDayAs: day) }.sorted { $0.date > $1.date }
@@ -158,7 +161,7 @@ struct HomeView: View {
     }
     private var spentInPeriod: Double {
         guard let p = period else { return 0 }
-        return statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + $1.myAmount }
+        return statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + everydaySpend($1) }
     }
     private var owedTotal: Double { all.filter { !$0.settled && $0.owedAmount > 0 }.reduce(0) { $0 + $1.owedAmount } }
 
@@ -438,7 +441,7 @@ struct HomeView: View {
             HStack {
                 Text(isFuture ? "In arrivo questo giorno" : (isToday ? "Spese di oggi" : "Spese del giorno"))
                 Spacer()
-                Text(eur(list.reduce(0) { $0 + ($1.paidByMe ? $1.amount : $1.myAmount) } + dayRecurring.reduce(0) { $0 + $1.amount }))
+                Text(eur(list.reduce(0) { $0 + ($1.paidByMe ? $1.amount - refundedPart($1) : $1.myAmount) } + dayRecurring.reduce(0) { $0 + $1.amount }))
             }
         }
     }

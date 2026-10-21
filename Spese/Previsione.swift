@@ -31,8 +31,12 @@ func makeForecast(available: Double, spent: Double, period: (start: Date, end: D
 /// Quanto di una spesa conta per la previsione: tutta, comprese quelle fatte per altri ("Ti devono").
 /// Quando un debito verso di te è incassato, la parte restituita non conta più.
 func everydaySpend(_ e: Expense) -> Double {
-    let refunded = (e.tripID.isEmpty && e.settled) ? e.owedAmount : 0
-    return max(e.myAmount - refunded, 0)
+    max(e.myAmount - refundedPart(e), 0)
+}
+
+/// La parte di una spesa "Ti devono" che mi è già stata restituita (0 se non c'è o non è ancora incassata).
+func refundedPart(_ e: Expense) -> Double {
+    (e.tripID.isEmpty && e.settled) ? min(e.owedAmount, e.amount) : 0
 }
 
 /// Una categoria confrontata con lo stesso numero di giorni del periodo precedente.
