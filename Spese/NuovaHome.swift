@@ -225,6 +225,7 @@ struct HomeView: View {
                 }
 
                 daySection
+                dayIncomeSection
                 extraSections
                 weekSection
 
@@ -312,6 +313,36 @@ struct HomeView: View {
             Text(eur(r.amount)).bold()
         }
         .contentShape(Rectangle())
+    }
+
+    /// Bonifici e altre entrate del giorno, in verde sotto le spese.
+    private var dayIncomes: [Income] {
+        incomes.filter { cal.isDate($0.date, inSameDayAs: day) && $0.kind != initialKind && $0.kind != balanceFixKind && $0.amount > 0 }
+            .sorted { $0.date > $1.date }
+    }
+    @ViewBuilder private var dayIncomeSection: some View {
+        if !dayIncomes.isEmpty {
+            Section {
+                ForEach(dayIncomes) { i in
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.down").font(.body.weight(.semibold)).foregroundStyle(Theme.accent)
+                            .frame(width: 40, height: 40).background(Theme.accent.opacity(0.14), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(i.note.isEmpty ? i.kind : i.note).lineLimit(1)
+                            Text(i.kind).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("+ \(eur(i.amount))").bold().foregroundStyle(Theme.accent)
+                    }
+                }
+            } header: {
+                HStack {
+                    Text(isToday ? "Entrate di oggi" : "Entrate del giorno")
+                    Spacer()
+                    Text("+ \(eur(dayIncomes.reduce(0) { $0 + $1.amount }))").foregroundStyle(Theme.accent)
+                }
+            }
+        }
     }
 
     private var daySwipe: some Gesture {
