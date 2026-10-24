@@ -8,6 +8,13 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
+    /// Notifica toccata: se chiede di inserire una spesa, apre "Nuova spesa".
+    @MainActor
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if response.notification.request.content.userInfo["apri"] as? String == "nuova" {
+            await UIApplication.shared.open(quickAddURL)
+        }
+    }
 }
 
 @main
@@ -193,9 +200,10 @@ func monthKey(_ d: Date) -> String {
 func parseAmount(_ s: String) -> Double? { Double(s.replacingOccurrences(of: ",", with: ".")) }
 func eur(_ v: Double) -> String { v.formatted(.currency(code: "EUR")) }
 
-func notify(_ title: String, _ body: String) {
+func notify(_ title: String, _ body: String, openNewExpense: Bool = false) {
     let c = UNMutableNotificationContent()
     c.title = title; c.body = body; c.sound = .default
+    if openNewExpense { c.userInfo = ["apri": "nuova"] }
     let req = UNNotificationRequest(identifier: UUID().uuidString, content: c,
                                     trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false))
     UNUserNotificationCenter.current().add(req)
