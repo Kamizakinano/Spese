@@ -1,0 +1,37 @@
+Prossimo pagamento programmato
+
+Ciao Salvo! Il prossimo pagamento automatico per 3DJake sta per arrivare.
+
+26,28 € saranno addebitati dalla tua carta **** 4833 il 17 ottobre 2026.
+
+Pagato	Pagato	17 ott	17 nov
+26,28 €	26,28 €	26,28 €	25,88 €
+
+Paga ora
+
+Riepilogo
+
+3DJake
+Riferimento dell'ordine del brand
+254901442452
+Riferimento dell'ordine Klarna
+PLS6MMBG
+Data dell'ordine
+13 novembre 2025
+Metodo di pagamento
+Mastercard
+**** 4833
+Opzioni di pagamento
+Paga in 12 mesi
+
+Dettagli ordine
+Bambu Lab AMS 2 Pro
+275,80 €
+3DJAKE Inserti Filettati - Set di 50 Pezzi
+3,56 €
+Spedizione
+12,00 €
+Interesse (15.90% TAEG)
+23,60 €
+Totale
+314,96 €

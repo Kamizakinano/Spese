@@ -28,6 +28,23 @@ func installmentSchedule(total: Double, count: Int, paid: Int, first: Date) -> [
     }
 }
 
+/// Le rate con alcuni importi scritti a mano (es. un anticipo): quelle non toccate si dividono
+/// quello che resta, così la somma resta uguale. L'ultima non toccata assorbe i centesimi.
+func adjustedSchedule(_ s: [InstallmentRate], fixed: [Int: Double]) -> [InstallmentRate] {
+    let target = s.reduce(0) { $0 + $1.amount }
+    let mine = fixed.filter { k, _ in s.contains { $0.index == k } }
+    let free = s.filter { mine[$0.index] == nil }
+    guard !free.isEmpty else { return s.map { InstallmentRate(index: $0.index, date: $0.date, amount: mine[$0.index] ?? $0.amount) } }
+    let rest = target - mine.values.reduce(0, +)
+    let each = (rest / Double(free.count) * 100).rounded() / 100
+    let lastFree = free.last!.index
+    return s.map { r in
+        if let v = mine[r.index] { return InstallmentRate(index: r.index, date: r.date, amount: v) }
+        let v = r.index == lastFree ? ((rest - each * Double(free.count - 1)) * 100).rounded() / 100 : each
+        return InstallmentRate(index: r.index, date: r.date, amount: v)
+    }
+}
+
 /// Crea le spese delle rate ancora da pagare (quelle già pagate non toccano il saldo).
 func makeInstallments(total: Double, count: Int, paid: Int, first: Date, name: String, provider: String) -> [Expense] {
     let id = UUID().uuidString

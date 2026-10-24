@@ -22,6 +22,7 @@ struct AddExpenseView: View {
     @State private var provider = "PayPal"
     @State private var rateCount = 3
     @State private var ratePaid = 0
+    @State private var rateTexts: [Int: String] = [:]   // importi delle rate scritti a mano
     /// Nuovo acquisto a rate: l'importo è il totale e si creano le rate da pagare.
     private var isPlan: Bool { editing == nil && catName == installmentCategory }
     @AppStorage("lastMethod") private var lastMethod = "carta"
@@ -44,6 +45,8 @@ struct AddExpenseView: View {
 
     private var knownTags: [String] { Array(Set(all.map(\.tag).filter { !$0.isEmpty })).sorted() }
     @Query private var debts: [Debt]
+    @Query(sort: \Trip.startDate, order: .reverse) private var trips: [Trip]
+    @State private var tripChoice = ""      // viaggio a cui collegare la spesa ("" = nessuno)
     /// Persone già usate in "Ti devono" e "Devo dare", le più frequenti per prime.
     private var knownPeople: [String] {
         let names = all.map { $0.owedBy.trimmingCharacters(in: .whitespaces) } + debts.map(\.person)
@@ -89,7 +92,15 @@ struct AddExpenseView: View {
                 }
                 Section {
                     DatePicker(isPlan ? "Prossimo addebito" : "Data", selection: $date, displayedComponents: .date)
-                    TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
+                    if !isPlan && catName == otherCategory {
+                        // "Altro": si scrive a cosa si riferisce e l'app sceglie l'emoji.
+                        HStack {
+                            Text(otherEmoji(note) ?? "❔").font(.title2)
+                            TextField("A cosa si riferisce? (es. regalo, parrucchiere)", text: $note)
+                        }
+                    } else {
+                        TextField(isPlan ? "Cosa hai comprato" : "Nota (facoltativa)", text: $note)
+                    }
                     NoteSuggestionsRow(typed: note, expenses: all) { s in
                         note = s.note
                         if cats.contains(where: { $0.name == s.category }) { catName = s.category }
@@ -98,6 +109,13 @@ struct AddExpenseView: View {
                 if isPlan { planSection }
                 if !isPlan {
                     Section("Viaggio o tag") {
+                        if !trips.isEmpty {
+                            // Voli, hotel e prenotazioni pagati prima: entrano nel totale della vacanza.
+                            Picker("Fa parte del viaggio", selection: $tripChoice) {
+                                Text("Nessuno").tag("")
+                                ForEach(trips) { t in Label(t.name, systemImage: "airplane").tag(t.uid) }
+                            }
+                        }
                         TextField("Tag (es. Roma 2026)", text: $tag)
                         if !knownTags.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -222,12 +240,30 @@ struct AddExpenseView: View {
             Stepper("Numero di rate: **\(rateCount)**", value: $rateCount, in: 2...48)
             Stepper("Rate già pagate: **\(ratePaid)**", value: $ratePaid, in: 0...(rateCount - 1))
             if let a = parseAmount(amountText), a > 0 {
-                let s = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
-                LabeledContent("Importo di ogni rata", value: eur(s.first?.amount ?? 0))
-                Text("Mancano **\(s.count) \(s.count == 1 ? "rata" : "rate")** · **\(eur(s.reduce(0) { $0 + $1.amount }))** alla fine")
-                ForEach(s.prefix(12), id: \.index) { r in
-                    LabeledContent("Rata \(r.index) · \(r.date.formatted(.dateTime.day().month(.abbreviated).year()))", value: eur(r.amount))
-                        .font(.footnote)
+                let base = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
+                let s = adjustedSchedule(base, fixed: fixedRates)
+                let target = base.reduce(0) { $0 + $1.amount }
+                let sum = s.reduce(0) { $0 + $1.amount }
+                Text("Mancano **\(s.count) \(s.count == 1 ? "rata" : "rate")** · **\(eur(target))** alla fine")
+                // Ogni rata si può scrivere a mano (es. un anticipo): le altre si dividono il resto.
+                ForEach(s.prefix(48), id: \.index) { r in
+                    HStack {
+                        Text("Rata \(r.index) · \(r.date.formatted(.dateTime.day().month(.abbreviated).year()))").font(.footnote)
+                        Spacer()
+                        TextField(amountString(r.amount), text: Binding(get: { rateTexts[r.index] ?? "" },
+                                                                         set: { rateTexts[r.index] = $0 }))
+                            .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 90)
+                            .font(.footnote.bold())
+                        Text("€").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if !fixedRates.isEmpty {
+                    if abs(sum - target) < 0.005 && s.allSatisfy({ $0.amount >= 0 }) {
+                        Label("Le rate fanno \(eur(sum)): torna col totale", systemImage: "checkmark.circle").font(.footnote).foregroundStyle(Theme.accent)
+                    } else {
+                        Label("Le rate fanno \(eur(sum)), ma il totale è \(eur(target))", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                    }
+                    Button("Rate tutte uguali") { rateTexts = [:] }.font(.footnote)
                 }
             }
         } header: {
@@ -236,7 +272,13 @@ struct AddExpenseView: View {
             if !error.isEmpty { Text(error).foregroundStyle(.red) }
             Text("L'importo è il totale dell'acquisto. Le rate già pagate non cambiano il saldo; le altre vanno in \"In arrivo\" e scendono dalla carta il giorno dell'addebito, una al mese.")
         }
-        .onChange(of: rateCount) { _, n in if ratePaid > n - 1 { ratePaid = n - 1 } }
+        .onChange(of: rateCount) { _, n in if ratePaid > n - 1 { ratePaid = n - 1 }; rateTexts = [:] }
+        .onChange(of: ratePaid) { _, _ in rateTexts = [:] }
+    }
+
+    /// Importi delle rate scritti a mano, per numero di rata.
+    private var fixedRates: [Int: Double] {
+        rateTexts.compactMapValues { t in parseAmount(t).flatMap { $0 >= 0 ? $0 : nil } }
     }
 
     private var refundQuestion: String {
@@ -251,6 +293,7 @@ struct AddExpenseView: View {
             shared = e.owedAmount > 0; owedBy = e.owedBy; owedText = e.owedAmount > 0 ? amountString(e.owedAmount) : ""
             method = e.method
             receipt = e.receipt
+            tripChoice = e.tripID
         } else {
             date = defaultDate
             method = lastMethod
@@ -284,10 +327,22 @@ struct AddExpenseView: View {
         guard let a = parseAmount(amountText), a > 0 else { error = "Inserisci l'importo."; return }
         if isPlan {
             let name = note.trimmingCharacters(in: .whitespaces)
+            let base = installmentSchedule(total: a, count: rateCount, paid: ratePaid, first: date)
+            let custom = adjustedSchedule(base, fixed: fixedRates)
+            guard custom.allSatisfy({ $0.amount >= 0 }),
+                  abs(custom.reduce(0) { $0 + $1.amount } - base.reduce(0) { $0 + $1.amount }) < 0.005 else {
+                error = "Le rate non tornano col totale: correggile o tocca \"Rate tutte uguali\"."; return
+            }
             for e in makeInstallments(total: a, count: rateCount, paid: ratePaid, first: date,
-                                      name: name.isEmpty ? provider : name, provider: provider) { ctx.insert(e) }
+                                      name: name.isEmpty ? provider : name, provider: provider) {
+                if let r = custom.first(where: { $0.index == e.planIndex }) { e.amount = r.amount }
+                ctx.insert(e)
+            }
             dismiss()
             return
+        }
+        if editing == nil && catName == otherCategory && note.trimmingCharacters(in: .whitespaces).isEmpty {
+            error = "Scrivi a cosa si riferisce la spesa."; return
         }
         let t = tag.trimmingCharacters(in: .whitespaces)
         var owed = shared ? (parseAmount(owedText) ?? 0) : 0
@@ -306,11 +361,13 @@ struct AddExpenseView: View {
             e.amount = a; e.categoryRaw = catName; e.date = date; e.note = note; e.tag = t
             e.owedAmount = owed; e.owedBy = owed > 0 ? (by.isEmpty ? e.owedBy : by) : by; e.method = method
             e.needsAmount = false
+            e.tripID = tripChoice
             if owed == 0 { e.settled = false }
             if e.receipt != receipt { e.receipt = receipt }
         } else {
             let e = Expense(amount: a, categoryName: catName, date: date, note: note)
             e.tag = t; e.owedAmount = owed; e.owedBy = by; e.method = method
+            e.tripID = tripChoice
             e.receipt = receipt
             // Mappa delle spese: dove sei adesso (solo se l'hai accesa).
             if UserDefaults.standard.bool(forKey: spendMapKey), let l = SpendLocation.shared.recent {
@@ -569,7 +626,7 @@ struct Backup: Codable {
         var planIndex: Int? = nil; var planCount: Int? = nil; var planTotal: Double? = nil
         var latitude: Double? = nil; var longitude: Double? = nil }
     struct T: Codable { var uid: String; var name: String; var currency: String; var startDate: Date; var endDate: Date
-        var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double }
+        var budget: Double; var countInStats: Bool; var peopleJSON: String; var lastRate: Double; var closed: Bool? = nil }
     struct P: Codable { var tripID: String; var from: String; var to: String; var amount: Double; var date: Date; var method: String }
     struct I: Codable { var amount: Double; var saved: Double; var kind: String; var date: Date; var note: String
         var refundKey: String? = nil }
@@ -635,7 +692,7 @@ func backupData(_ ctx: ModelContext) -> Data? {
     b.cashMoves = all(CashMove.self).map { Backup.CM(amount: $0.amount, date: $0.date, note: $0.note, kind: $0.kind, bank: $0.bank, refundKey: $0.refundKey) }
     b.cashStart = all(Account.self).first?.cashStart
     b.trips = all(Trip.self).map { Backup.T(uid: $0.uid, name: $0.name, currency: $0.currency, startDate: $0.startDate, endDate: $0.endDate,
-                                            budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate) }
+                                            budget: $0.budget, countInStats: $0.countInStats, peopleJSON: $0.peopleJSON, lastRate: $0.lastRate, closed: $0.closed) }
     b.payments = all(TripPayment.self).map { Backup.P(tripID: $0.tripID, from: $0.from, to: $0.to, amount: $0.amount, date: $0.date, method: $0.method) }
     b.debts = all(Debt.self).map { Backup.D(person: $0.person, amount: $0.amount, note: $0.note, category: $0.category,
                                             date: $0.date, paid: $0.paid, paidMethod: $0.paidMethod, paidDate: $0.paidDate) }
@@ -752,7 +809,7 @@ func restoreBackup(_ ctx: ModelContext, from url: URL) -> Bool {
     }
     for t in b.trips ?? [] {
         let x = Trip(name: t.name, currency: t.currency, startDate: t.startDate, endDate: t.endDate)
-        x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate
+        x.uid = t.uid; x.budget = t.budget; x.countInStats = t.countInStats; x.peopleJSON = t.peopleJSON; x.lastRate = t.lastRate; x.closed = t.closed ?? false
         ctx.insert(x)
     }
     for p in b.payments ?? [] {

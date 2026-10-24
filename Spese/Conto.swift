@@ -459,6 +459,8 @@ struct GoalEditor: View {
     @State private var targetText = ""
     @State private var deadline = Calendar.current.date(byAdding: .month, value: 6, to: Date()) ?? Date()
     @State private var addText = ""
+    @State private var fromCard = false   // i soldi arrivano dalla carta (versamento nei risparmi)
+    @State private var error = ""
 
     var body: some View {
         NavigationStack {
@@ -466,10 +468,18 @@ struct GoalEditor: View {
                 TextField("Nome (es. Vacanza)", text: $name)
                 TextField("Obiettivo (€)", text: $targetText).keyboardType(.decimalPad)
                 DatePicker("Entro il", selection: $deadline, displayedComponents: .date)
-                Section("Assegna dai risparmi") {
-                    TextField("Importo da assegnare (€)", text: $addText).keyboardType(.decimalPad)
-                    Text("Risparmi non ancora assegnati: \(eur(freeSavings)). Un importo negativo toglie soldi dall'obiettivo.")
+                Section("Metti soldi nell'obiettivo") {
+                    Picker("Da dove", selection: $fromCard) {
+                        Text("Dai risparmi liberi").tag(false)
+                        Text("Dalla carta").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    TextField("Importo (€)", text: $addText).keyboardType(.decimalPad)
+                    Text(fromCard
+                         ? "I soldi passano dalla carta ai risparmi e vanno in questo obiettivo."
+                         : "Risparmi non ancora assegnati: \(eur(freeSavings)). Un importo negativo toglie soldi dall'obiettivo.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if !error.isEmpty { Text(error).font(.footnote).foregroundStyle(.red) }
                 }
             }
             .navigationTitle(goal == nil ? "Nuovo obiettivo" : "Modifica obiettivo")
@@ -487,7 +497,15 @@ struct GoalEditor: View {
     private func save() {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard !n.isEmpty, let t = parseAmount(targetText), t > 0 else { return }
-        let add = min(parseAmount(addText) ?? 0, freeSavings)
+        let wanted = parseAmount(addText) ?? 0
+        if fromCard {
+            guard wanted >= 0 else { error = "Dalla carta si possono solo aggiungere soldi."; return }
+            if wanted > 0 { ctx.insert(SavingsMove(amount: wanted, date: Date(), note: "Per l'obiettivo \(n)")) }
+        } else if wanted > freeSavings + 0.005 {
+            error = "Nei risparmi liberi ci sono solo \(eur(max(freeSavings, 0))). Scegli \"Dalla carta\" o metti un importo più basso."
+            return
+        }
+        let add = wanted
         if let g = goal {
             g.name = n; g.target = t; g.deadline = deadline
             g.saved = max(0, g.saved + add)

@@ -31,8 +31,12 @@ func makeForecast(available: Double, spent: Double, period: (start: Date, end: D
 /// Quanto di una spesa conta per la previsione: tutta, comprese quelle fatte per altri ("Ti devono").
 /// Quando un debito verso di te è incassato, la parte restituita non conta più.
 func everydaySpend(_ e: Expense) -> Double {
-    let refunded = (e.tripID.isEmpty && e.settled) ? e.owedAmount : 0
-    return max(e.myAmount - refunded, 0)
+    max(e.myAmount - refundedPart(e), 0)
+}
+
+/// La parte di una spesa "Ti devono" che mi è già stata restituita (0 se non c'è o non è ancora incassata).
+func refundedPart(_ e: Expense) -> Double {
+    (e.tripID.isEmpty && e.settled) ? min(e.owedAmount, e.amount) : 0
 }
 
 /// Una categoria confrontata con lo stesso numero di giorni del periodo precedente.
@@ -115,6 +119,7 @@ struct ForecastSection: View {
     @Query private var cash: [CashMove]
     @Query private var accounts: [Account]
     @Query private var payments: [TripPayment]
+    @Query private var recurring: [Recurring]
 
     private struct Point: Identifiable { let date: Date; let value: Double; let forecast: Bool; var id: String { "\(date)\(forecast)" } }
 
@@ -124,7 +129,8 @@ struct ForecastSection: View {
         if let p = d.period {
             let soon = statExpenses(raw, trips: trips).filter { $0.date >= Ledger.endOfToday && $0.date < p.end && $0.paidByMe }
                 .reduce(0) { $0 + $1.myAmount }
-            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon)
+            let rec = recurringDue(recurring, expenses: raw, before: p.end)
+            let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon + rec)
             Section("Previsione") {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")
@@ -133,7 +139,15 @@ struct ForecastSection: View {
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Spendi in media \(eur(f.avgPerDay)) al giorno, il budget è \(eur(f.budgetPerDay))")
                         .font(.footnote).opacity(0.85)
-                    Text("Conta tutte le spese; quando incassi un \"Ti devono\" la parte restituita si toglie.")
+                    // Il conto voce per voce.
+                    VStack(spacing: 3) {
+                        line("Disponibile oggi", f.available)
+                        line("Spese di tutti i giorni (\(f.daysLeft) gg)", -f.avgPerDay * Double(f.daysLeft))
+                        if soon > 0 { line("Rate e spese già in arrivo", -soon) }
+                        if rec > 0 { line("Mutuo, ricorrenti e abbonamenti", -rec) }
+                    }
+                    .font(.caption).padding(.top, 6)
+                    Text("Quando incassi un \"Ti devono\" la parte restituita si toglie.")
                         .font(.caption).opacity(0.75)
                 }
                 .foregroundStyle(.white).padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -160,6 +174,10 @@ struct ForecastSection: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func line(_ label: String, _ v: Double) -> some View {
+        HStack { Text(label); Spacer(); Text((v < 0 ? "− " : "") + eur(abs(v))).bold() }
     }
 
     private func points(_ d: PeriodData, _ f: Forecast) -> [Point] {
@@ -214,8 +232,11 @@ struct ComparisonSection: View {
                 let now = changes.reduce(0) { $0 + $1.now }, before = changes.reduce(0) { $0 + $1.before }
                 let total = CategoryChange(name: "Totale", now: now, before: before)
                 Section {
+                    let top = changes.map { max($0.now, $0.before) }.max() ?? 1
                     ForEach(changes) { c in
                         let l = look(c.name)
+                        NavigationLink { CategoryDetailView(category: c.name) } label: {
+                        VStack(spacing: 6) {
                         HStack(spacing: 12) {
                             Image(systemName: l.icon).foregroundStyle(.white)
                                 .frame(width: 32, height: 32).background(l.color, in: RoundedRectangle(cornerRadius: 8))
@@ -226,6 +247,10 @@ struct ComparisonSection: View {
                             Spacer()
                             badge(c)
                         }
+                        // Barra: quanto pesa la categoria in questo periodo.
+                        ProgressView(value: c.now, total: max(top, 0.01)).tint(l.color)
+                        }
+                        }
                     }
                     HStack {
                         Text("Totale").bold()
@@ -234,9 +259,9 @@ struct ComparisonSection: View {
                         badge(total)
                     }
                 } header: {
-                    Text("Rispetto al periodo scorso")
+                    Text("Per categoria, rispetto al periodo scorso")
                 } footer: {
-                    Text("Confronto con gli stessi giorni dopo lo stipendio precedente.")
+                    Text("Confronto con gli stessi giorni dopo lo stipendio precedente. Tocca una categoria per vedere le spese e confrontare altri giorni.")
                 }
             }
         }
@@ -341,4 +366,19 @@ struct SpendingCalendarView: View {
         month = cal.date(byAdding: .month, value: n, to: month) ?? month
         selected = nil
     }
+}
+
+/// Spese ricorrenti e abbonamenti (mutuo, bollette fisse…) che arrivano da domani fino a `end` escluso,
+/// senza quelli già inseriti a mano come spesa.
+func recurringDue(_ recurring: [Recurring], expenses: [Expense], before end: Date, now: Date = Date()) -> Double {
+    let cal = Calendar.current
+    let from = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now
+    var total = 0.0
+    for r in recurring {
+        for d in monthlyDates(nextKey: r.nextKey, day: r.day, until: end)
+        where d >= from && d < end && !recurringCovered(name: r.name, on: d, expenses: expenses) {
+            total += r.amount
+        }
+    }
+    return total
 }

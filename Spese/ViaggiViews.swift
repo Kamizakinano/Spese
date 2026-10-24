@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 private func money(_ v: Double, _ code: String) -> String { v.formatted(.currency(code: code)) }
 private func dayText(_ d: Date) -> String { d.formatted(.dateTime.day().month(.abbreviated)) }
@@ -68,7 +69,7 @@ struct TripEditor: View {
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(6 * 86400)
     @State private var budgetText = ""
-    @State private var countInStats = false
+    @State private var countInStats = true   // le spese del viaggio si pagano con lo stipendio: contano nel periodo
     @State private var people: [String] = []
     @State private var newPerson = ""
 
@@ -162,6 +163,7 @@ struct TripDetailView: View {
     @State private var editingTrip = false
     @State private var editing: Expense?
     @State private var settling: Transfer?
+    @State private var viewing: UIImage?
 
     private var expenses: [Expense] { all.filter { $0.tripID == trip.uid } }
     private var payments: [TripPayment] { allPayments.filter { $0.tripID == trip.uid } }
@@ -179,6 +181,7 @@ struct TripDetailView: View {
             .filter { $0.total > 0 }.sorted { $0.total > $1.total }
     }
     private func label(_ n: String) -> String { n == me ? "Tu" : n }
+    private func catColor(_ n: String) -> Color { cats.first { $0.name == n }.map { Color(hex: $0.colorHex) } ?? tripBlue }
     /// La mia parte nella valuta locale (con il cambio di ogni spesa).
     private var localTotal: Double {
         var sum = 0.0
@@ -224,6 +227,27 @@ struct TripDetailView: View {
             if !trip.people.isEmpty {
                 Section {
                     if transfers.isEmpty { Text("Siete pari: nessuno deve soldi.").foregroundStyle(.secondary) }
+                    // In grande quello che riguarda me, con le spese da cui viene.
+                    ForEach(transfers.filter { $0.from == me || $0.to == me }) { t in
+                        let other = t.from == me ? t.to : t.from
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(t.from == me ? "Devi \(eur(t.amount)) a \(other)" : "\(other) ti deve \(eur(t.amount))")
+                                .font(.title3.bold()).foregroundStyle(t.from == me ? Color.orange : Theme.accent)
+                            DisclosureGroup("Da dove viene") {
+                                ForEach(tripDebtLines(expenses, with: other), id: \.expense.persistentModelID) { l in
+                                    HStack {
+                                        Text(l.expense.note.isEmpty ? l.expense.categoryRaw : l.expense.note).lineLimit(1)
+                                        Spacer()
+                                        Text(l.amount > 0 ? "devi \(eur(l.amount))" : "ti deve \(eur(-l.amount))")
+                                            .foregroundStyle(l.amount > 0 ? Color.orange : Theme.accent)
+                                    }
+                                    .font(.footnote)
+                                }
+                            }
+                            .font(.footnote)
+                        }
+                        .padding(.vertical, 4)
+                    }
                     ForEach(transfers) { t in
                         HStack {
                             Text("\(label(t.from)) → \(label(t.to))")
@@ -241,9 +265,36 @@ struct TripDetailView: View {
             }
 
             if !byCategory.isEmpty {
-                Section("Per categoria (la tua parte)") {
+                Section("Dove sono andati i soldi (la tua parte)") {
+                    let top = byCategory.first?.total ?? 1
                     ForEach(byCategory) { c in
-                        HStack { Text(c.name); Spacer(); Text(eur(c.total)).bold() }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack { Text(c.name); Spacer(); Text(eur(c.total)).bold() }
+                            ProgressView(value: c.total, total: max(top, 0.01)).tint(catColor(c.name))
+                        }
+                    }
+                    if let big = expenses.max(by: { $0.myAmount < $1.myAmount }) {
+                        LabeledContent("La spesa più cara", value: "\(big.note.isEmpty ? big.categoryRaw : big.note) · \(eur(big.myAmount))")
+                            .font(.footnote)
+                    }
+                }
+            }
+
+            let photos = expenses.filter { $0.receipt != nil }
+            if !photos.isEmpty {
+                Section("Scontrini e foto") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(photos) { e in
+                                if let d = e.receipt, let img = UIImage(data: d) {
+                                    Button { viewing = img } label: {
+                                        Image(uiImage: img).resizable().scaledToFill().frame(width: 70, height: 90)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .accessibilityLabel("Foto di \(e.note.isEmpty ? e.categoryRaw : e.note)")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -295,6 +346,9 @@ struct TripDetailView: View {
         .sheet(isPresented: $adding) { TripExpenseEditor(trip: trip, editing: nil) }
         .sheet(item: $editing) { TripExpenseEditor(trip: trip, editing: $0) }
         .sheet(isPresented: $editingTrip) { TripEditor(trip: trip) }
+        .sheet(isPresented: Binding(get: { viewing != nil }, set: { if !$0 { viewing = nil } })) {
+            if let viewing { ReceiptViewer(image: viewing) }
+        }
         .confirmationDialog(settling.map { "\(label($0.from)) ha dato \(eur($0.amount)) a \(label($0.to))?" } ?? "",
                             isPresented: Binding(get: { settling != nil }, set: { if !$0 { settling = nil } }),
                             titleVisibility: .visible) {
@@ -341,6 +395,10 @@ struct TripExpenseEditor: View {
     @State private var custom = false
     @State private var customTexts: [String: String] = [:]
     @State private var error = ""
+    @State private var receipt: Data?            // foto dello scontrino (o del locale)
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showScanner = false
+    @State private var showReceipt = false
 
     private var rate: Double? { parseAmount(rateText).flatMap { $0 > 0 ? $0 : nil } }
     private var entered: Double? { parseAmount(amountText).flatMap { $0 > 0 ? $0 : nil } }
@@ -415,7 +473,40 @@ struct TripExpenseEditor: View {
                         }.pickerStyle(.segmented)
                     }
                 }
+                Section("Scontrino") {
+                    if let receipt, let img = UIImage(data: receipt) {
+                        Button { showReceipt = true } label: {
+                            Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 180)
+                                .clipShape(RoundedRectangle(cornerRadius: 8)).frame(maxWidth: .infinity)
+                        }
+                        .accessibilityLabel("Foto dello scontrino, tocca per ingrandire")
+                        Button("Rimuovi la foto", role: .destructive) { self.receipt = nil }
+                    }
+                    Button { showScanner = true } label: {
+                        Label(receipt == nil ? "Scatta foto" : "Rifai la foto", systemImage: "camera")
+                    }
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label("Scegli dalla galleria", systemImage: "photo")
+                    }
+                }
                 if !error.isEmpty { Text(error).font(.footnote).foregroundStyle(.red) }
+            }
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let d = try? await item.loadTransferable(type: Data.self), let img = UIImage(data: d) {
+                        receipt = await Task.detached { compressReceipt(img) }.value
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showScanner) {
+                DocumentScanner { imgs in
+                    let first = imgs.first
+                    Task { receipt = await Task.detached { compressReceipt(first) }.value }
+                }.ignoresSafeArea()
+            }
+            .sheet(isPresented: $showReceipt) {
+                if let receipt, let img = UIImage(data: receipt) { ReceiptViewer(image: img) }
             }
             .navigationTitle(editing == nil ? "Spesa del viaggio" : "Modifica spesa")
             .navigationBarTitleDisplayMode(.inline)
@@ -429,13 +520,15 @@ struct TripExpenseEditor: View {
     }
 
     private func load() {
-        participants = Set(trip.everyone)
+        // Spesa nuova: di partenza è solo mia; chi la divide accende gli altri.
+        participants = [me]
         inLocal = trip.isForeign
         catName = cats.first?.name ?? "Altro"
         date = trip.contains(Date()) ? Date() : trip.startDate
         if trip.lastRate > 0 { rateText = String(format: "%.4f", trip.lastRate).replacingOccurrences(of: ".", with: ",") }
         guard let e = editing else { return }
         catName = e.categoryRaw; date = e.date; note = e.note; method = e.method; payer = e.payer
+        receipt = e.receipt
         if !e.originalCurrency.isEmpty {
             inLocal = true
             amountText = String(e.originalAmount).replacingOccurrences(of: ".", with: ",")
@@ -489,6 +582,7 @@ struct TripExpenseEditor: View {
         let x = editing ?? Expense(amount: e, categoryName: catName, date: date, note: note)
         x.amount = e; x.categoryRaw = catName; x.date = date; x.note = note
         x.tripID = trip.uid
+        if x.receipt != receipt { x.receipt = receipt }
         x.paidBy = payer == me ? "" : payer
         x.method = payer == me ? method : "carta"
         if inLocal && trip.isForeign, let a = entered, let r = rate {
@@ -520,30 +614,166 @@ struct TripBadge: View {
     }
 }
 
-/// Riquadro del viaggio in corso: giorno, speso e budget.
+/// Quanto ho speso per un viaggio: nei giorni del viaggio e in tutto (voli, hotel e prenotazioni pagati prima compresi).
+func tripTotals(_ trip: Trip, _ expenses: [Expense]) -> (here: Double, total: Double) {
+    let mine = expenses.filter { $0.tripID == trip.uid }
+    return (mine.filter { trip.contains($0.date) }.reduce(0) { $0 + $1.myAmount }, mine.reduce(0) { $0 + $1.myAmount })
+}
+
+/// Riquadro del viaggio in corso: giorno, speso, cambio di oggi e totale della vacanza.
 struct TripHomeCard: View {
     let trip: Trip
     let expenses: [Expense]
+    @State private var rate: Double = 0
 
     var body: some View {
-        let mine = expenses.filter { $0.tripID == trip.uid }.reduce(0) { $0 + $1.myAmount }
+        let t = tripTotals(trip, expenses)
         let cal = Calendar.current
-        let total = (cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: trip.endDate)).day ?? 0) + 1
-        let today = min((cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: Date())).day ?? 0) + 1, total)
+        let days = (cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: trip.endDate)).day ?? 0) + 1
+        let today = min((cal.dateComponents([.day], from: cal.startOfDay(for: trip.startDate), to: cal.startOfDay(for: Date())).day ?? 0) + 1, days)
         VStack(alignment: .leading, spacing: 8) {
-            Label(trip.name, systemImage: "airplane").font(.headline)
-            Text("\(dayText(trip.startDate)) – \(dayText(trip.endDate)) · giorno \(today) di \(total)").font(.caption).opacity(0.85)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(trip.name, systemImage: "airplane").font(.headline).lineLimit(1)
+                    Text("\(dayText(trip.startDate)) – \(dayText(trip.endDate)) · giorno \(today) di \(days)").font(.caption).opacity(0.85)
+                    Text("Speso **\(eur(t.here))**").font(.caption)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 3) {
+                    if trip.isForeign && rate > 0 {
+                        Text("1 € = \(rate.formatted(.number.precision(.fractionLength(2)))) \(trip.currency)")
+                            .font(.caption2.bold()).padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(.white.opacity(0.2), in: Capsule())
+                    }
+                    Text("Totale vacanza").font(.caption2).opacity(0.85)
+                    Text(eur(t.total)).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
             if trip.budget > 0 {
-                ProgressView(value: min(mine, trip.budget), total: trip.budget).tint(.white)
-                HStack {
-                    Text("Speso **\(eur(mine))**")
-                    Spacer()
-                    Text(mine <= trip.budget ? "Restano \(eur(trip.budget - mine))" : "Budget superato di \(eur(mine - trip.budget))")
-                }.font(.caption)
-            } else {
-                Text("Speso **\(eur(mine))**").font(.caption)
+                ProgressView(value: min(t.total, trip.budget), total: trip.budget).tint(.white)
+                Text(t.total <= trip.budget ? "Restano \(eur(trip.budget - t.total)) del budget" : "Budget superato di \(eur(t.total - trip.budget))")
+                    .font(.caption)
             }
         }
         .foregroundStyle(.white).padding(.vertical, 4)
+        .task(id: trip.currency) {
+            // Cambio di oggi della BCE; senza rete resta l'ultimo usato nel viaggio.
+            rate = trip.lastRate
+            if trip.isForeign, let r = await Rates.rate(for: trip.currency) { rate = r }
+        }
+    }
+}
+
+/// Prova prezzi: scrivi un prezzo nella moneta del viaggio e vedi subito quanto costa in euro. Non registra nulla.
+struct TripPriceCheck: View {
+    let trip: Trip
+    @State private var text = ""
+    @State private var rate: Double = 0
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "dollarsign.arrow.circlepath").foregroundStyle(tripBlue)
+            HStack(spacing: 4) {
+                TextField("Prezzo", text: $text).keyboardType(.decimalPad).focused($focused)
+                Text(trip.currency).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tripBlue.opacity(0.6)))
+            Text("=").foregroundStyle(.secondary)
+            Text(priceInEuro(text, rate: rate).map(eur) ?? "– €")
+                .font(.headline).foregroundStyle(tripBlue).lineLimit(1).minimumScaleFactor(0.7)
+                .frame(minWidth: 80, alignment: .trailing)
+        }
+        .accessibilityElement(children: .contain)
+        .toolbar {
+            if focused { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Fine") { focused = false } } }
+        }
+        .task(id: trip.currency) {
+            rate = trip.lastRate
+            if let r = await Rates.rate(for: trip.currency) { rate = r }
+        }
+    }
+}
+
+/// Quanto vale in euro un prezzo scritto nella moneta del viaggio (1 € = rate). nil se manca qualcosa.
+func priceInEuro(_ text: String, rate: Double) -> Double? {
+    guard rate > 0, let a = parseAmount(text), a > 0 else { return nil }
+    return (a / rate * 100).rounded() / 100
+}
+
+
+/// Una spesa del viaggio e quanto pesa nel conto con un'altra persona (+ = io le devo, − = lei mi deve).
+struct TripDebtLine { let expense: Expense; let amount: Double }
+
+/// Le spese da cui viene il debito tra me e `other`: quelle pagate da lei con una mia parte,
+/// e quelle pagate da me con una sua parte.
+func tripDebtLines(_ expenses: [Expense], with other: String) -> [TripDebtLine] {
+    expenses.compactMap { e in
+        if e.paidBy == other, e.myAmount > 0.004 { return TripDebtLine(expense: e, amount: e.myAmount) }
+        if e.paidByMe, let s = e.shares[other], s > 0.004 { return TripDebtLine(expense: e, amount: -s) }
+        return nil
+    }
+    .sorted { $0.expense.date < $1.expense.date }
+}
+
+/// Chiusura del viaggio dopo il rientro: chiede se i debiti con i compagni sono stati saldati.
+struct TripCloseView: View {
+    let trip: Trip
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.dismiss) private var dismiss
+    @Query private var all: [Expense]
+    @Query private var allPayments: [TripPayment]
+
+    private var expenses: [Expense] { all.filter { $0.tripID == trip.uid } }
+    private var mine: [Transfer] {
+        settleUp(tripBalances(expenses: expenses, payments: allPayments.filter { $0.tripID == trip.uid }))
+            .filter { $0.from == me || $0.to == me }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Totale vacanza", value: eur(tripTotals(trip, expenses).total))
+                }
+                ForEach(mine) { t in
+                    let other = t.from == me ? t.to : t.from
+                    Section {
+                        VStack(spacing: 4) {
+                            Text(t.from == me ? "Devi \(eur(t.amount)) a \(other)" : "\(other) ti deve \(eur(t.amount))").font(.headline)
+                            Text(t.from == me ? "Le hai dato i soldi?" : "Hai riscosso il debito?").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        Button("Sì, in contanti") { pay(t, "contanti") }
+                        Button("Sì, con bonifico / carta") { pay(t, "carta") }
+                        Button("No, siamo pari così") { pay(t, forgivenMethod) }.foregroundStyle(.orange)
+                    } footer: {
+                        Text("\"Siamo pari così\" chiude il conto senza soldi: il saldo non cambia.")
+                    }
+                }
+                Section {
+                    Button(mine.isEmpty ? "Chiudi il viaggio" : "Non ancora: chiudi e lascia il conto aperto") { close() }
+                } footer: {
+                    if !mine.isEmpty { Text("Il conto resta nel dettaglio del viaggio (Altro → Viaggi), con il tasto \"Saldato\".") }
+                }
+            }
+            .navigationTitle("Chiudi \(trip.name)").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } } }
+        }
+    }
+
+    private func pay(_ t: Transfer, _ method: String) {
+        let p = TripPayment(tripID: trip.uid, from: t.from, to: t.to, amount: t.amount, date: Date())
+        p.method = method
+        ctx.insert(p)
+        try? ctx.save()
+        if mine.isEmpty { close() }   // tutti i conti chiusi: si chiude anche il viaggio
+    }
+
+    private func close() {
+        trip.closed = true
+        try? ctx.save()
+        dismiss()
     }
 }

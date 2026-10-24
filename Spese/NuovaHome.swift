@@ -13,8 +13,12 @@ struct ExpenseRow: View {
 
     var body: some View {
         let e = expense
+        let owe = e.paidByMe ? 0 : e.myAmount   // la mia parte di una spesa pagata da altri
         HStack(spacing: 12) {
-            if e.planProvider.isEmpty {
+            if e.planProvider.isEmpty, e.categoryRaw == otherCategory, let emoji = otherEmoji(e.note) {
+                Text(emoji).font(.title3)
+                    .frame(width: 40, height: 40).background(look.color.opacity(0.14), in: Circle())
+            } else if e.planProvider.isEmpty {
                 Image(systemName: look.icon).font(.body.weight(.semibold)).foregroundStyle(look.color)
                     .frame(width: 40, height: 40).background(look.color.opacity(0.14), in: Circle())
             } else {
@@ -22,17 +26,29 @@ struct ExpenseRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(e.note.isEmpty ? e.categoryRaw : e.note).foregroundStyle(.primary).lineLimit(1)
-                let shown = rowDetail(detail, note: e.note, category: e.categoryRaw)
-                if !shown.isEmpty { Text(shown).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                if !e.paidByMe {
+                    // Pagata da un'altra persona: chi ha pagato e quanto le devo.
+                    (Text("Pagato da \(e.paidBy)")
+                     + (owe > 0 ? Text(" · ") + Text("devi \(eur(owe))").bold().foregroundColor(.orange) : Text("")))
+                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    let shown = rowDetail(detail, note: e.note, category: e.categoryRaw)
+                    if !shown.isEmpty { Text(shown).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
+                }
                 if let trip { TripBadge(name: trip.name) }
                 if e.owedAmount > 0 && e.tripID.isEmpty { OwedBadge(expense: e) }
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(e.needsAmount ? "Da completare" : eur(e.amount))
+                Text(e.needsAmount ? "Da completare" : eur(owe > 0 ? owe : e.amount))
                     .font(e.needsAmount ? .caption.bold() : .body.bold())
                     .foregroundStyle(e.needsAmount ? Color.orange : Color.primary)
-                if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
+                if owe > 0 {
+                    Text("di \(eur(e.amount))").font(.caption).foregroundStyle(.secondary)
+                } else if refundedPart(e) > 0 {
+                    // "Ti devono" già restituito: per me conta solo la differenza.
+                    Text("per te \(eur(e.amount - refundedPart(e)))").font(.caption.bold()).foregroundStyle(Theme.accent)
+                } else if e.originalAmount > 0, !e.originalCurrency.isEmpty, e.originalCurrency != "EUR" {
                     Text(e.originalAmount.formatted(.currency(code: e.originalCurrency))).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -84,6 +100,7 @@ struct HomeView: View {
     @State private var editing: Expense?
     @State private var editingRecurring: Recurring?
     @State private var tripAdding: Trip?
+    @State private var closingTrip: Trip?
     @State private var cashCheck = false
     @State private var cashCheckSeen = Date()
     @State private var endedSummary: EndedPeriod?
@@ -114,7 +131,7 @@ struct HomeView: View {
     }
     private var daysLeftInPeriod: Int { period.map { max(daysLeft(until: $0.end), 1) } ?? 1 }
     private var spentTodayCash: Double {
-        all.filter { $0.paidByMe && cal.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount }
+        all.filter { $0.paidByMe && cal.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount - refundedPart($1) }
     }
     /// Budget di oggi (calcolato con i soldi di stamattina).
     private var todayBudget: Double {
@@ -129,7 +146,7 @@ struct HomeView: View {
         return max(available - upcomingTotal(before: p.end) - dailySave * d, 0) / d
     }
     private func spentOn(_ d: Date) -> Double {
-        statExpenses(all, trips: trips).filter { cal.isDate($0.date, inSameDayAs: d) }.reduce(0) { $0 + $1.myAmount }
+        statExpenses(all, trips: trips).filter { cal.isDate($0.date, inSameDayAs: d) }.reduce(0) { $0 + everydaySpend($1) }
     }
     private var dayExpenses: [Expense] {
         all.filter { cal.isDate($0.date, inSameDayAs: day) }.sorted { $0.date > $1.date }
@@ -144,7 +161,7 @@ struct HomeView: View {
     }
     private var spentInPeriod: Double {
         guard let p = period else { return 0 }
-        return statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + $1.myAmount }
+        return statExpenses(all, trips: trips).filter { $0.date >= p.start && $0.date < min(p.end, Ledger.endOfToday) }.reduce(0) { $0 + everydaySpend($1) }
     }
     private var owedTotal: Double { all.filter { !$0.settled && $0.owedAmount > 0 }.reduce(0) { $0 + $1.owedAmount } }
 
@@ -174,7 +191,7 @@ struct HomeView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                // Trascinando il dito sulla data o sui giorni si cambia giorno, come con le frecce.
+                // Trascinando il dito sulla data o sui giorni si cambia giorno.
                 .simultaneousGesture(daySwipe)
 
                 Section { ringCard; chips }
@@ -182,7 +199,33 @@ struct HomeView: View {
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
+                // Per tre giorni dopo il rientro: com'è andato il viaggio.
+                if activeTrip(trips) == nil, let t = recentlyEndedTrip(trips) {
+                    Section {
+                        NavigationLink { TripDetailView(trip: t) } label: {
+                            Label("Com'è andato il viaggio a \(t.name)? · \(eur(tripTotals(t, all).total))", systemImage: "airplane.arrival")
+                                .foregroundStyle(tripBlue)
+                        }
+                        Button { closingTrip = t } label: {
+                            Label("Chiudi il viaggio", systemImage: "checkmark.circle.fill").bold().frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(tripBlue)
+                    }
+                }
+                // Nei giorni del viaggio il riquadro sta in alto, per aggiungere le spese al volo.
+                if let t = activeTrip(trips) {
+                    Section {
+                        NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
+                            .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        if t.isForeign { TripPriceCheck(trip: t) }
+                        Button { tripAdding = t } label: {
+                            Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
+                        }
+                    }
+                }
+
                 daySection
+                dayIncomeSection
                 extraSections
                 weekSection
 
@@ -236,6 +279,7 @@ struct HomeView: View {
                 else { AddExpenseView(defaultDate: e.date, editing: e) }
             }
             .sheet(item: $tripAdding) { TripExpenseEditor(trip: $0, editing: nil) }
+            .sheet(item: $closingTrip) { TripCloseView(trip: $0) }
             .sheet(item: $editingRecurring) { r in RecurringEditor(editing: r) }
             .sheet(isPresented: $cashCheck, onDismiss: { cashCheckSeen = Date() }) { CashCheckView() }
             .sheet(isPresented: $showPeriod) { PayPeriodEditor() }
@@ -271,6 +315,36 @@ struct HomeView: View {
         .contentShape(Rectangle())
     }
 
+    /// Bonifici e altre entrate del giorno, in verde sotto le spese.
+    private var dayIncomes: [Income] {
+        incomes.filter { cal.isDate($0.date, inSameDayAs: day) && $0.kind != initialKind && $0.kind != balanceFixKind && $0.amount > 0 }
+            .sorted { $0.date > $1.date }
+    }
+    @ViewBuilder private var dayIncomeSection: some View {
+        if !dayIncomes.isEmpty {
+            Section {
+                ForEach(dayIncomes) { i in
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.down").font(.body.weight(.semibold)).foregroundStyle(Theme.accent)
+                            .frame(width: 40, height: 40).background(Theme.accent.opacity(0.14), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(i.note.isEmpty ? i.kind : i.note).lineLimit(1)
+                            Text(i.kind).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("+ \(eur(i.amount))").bold().foregroundStyle(Theme.accent)
+                    }
+                }
+            } header: {
+                HStack {
+                    Text(isToday ? "Entrate di oggi" : "Entrate del giorno")
+                    Spacer()
+                    Text("+ \(eur(dayIncomes.reduce(0) { $0 + $1.amount }))").foregroundStyle(Theme.accent)
+                }
+            }
+        }
+    }
+
     private var daySwipe: some Gesture {
         DragGesture(minimumDistance: 30).onEnded { v in
             guard abs(v.translation.width) > 60, abs(v.translation.width) > abs(v.translation.height) else { return }
@@ -282,18 +356,18 @@ struct HomeView: View {
     }
 
     private var dayHeader: some View {
-        // Un tocco sulla data riporta a oggi. Le frecce stanno sulla stessa riga della data.
+        // Un tocco sulla data riporta a oggi. Le frecce cambiano settimana (stesso giorno), il dito cambia giorno.
         VStack(spacing: 3) {
             HStack {
-                Button { shiftDay(-1) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
-                    .accessibilityLabel("Giorno prima")
+                Button { shiftDay(-7) } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Settimana prima")
                 Spacer()
                 Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
                     Text(day.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized).font(.headline).foregroundStyle(.primary)
                 }
                 Spacer()
-                Button { shiftDay(1) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
-                    .accessibilityLabel("Giorno dopo")
+                Button { shiftDay(7) } label: { Image(systemName: "chevron.right").font(.title3.weight(.semibold)) }
+                    .accessibilityLabel("Settimana dopo")
             }
             Button { withAnimation { day = cal.startOfDay(for: Date()) } } label: {
                 Text(isToday ? "Oggi" : "Torna a oggi").font(.caption.bold())
@@ -398,7 +472,7 @@ struct HomeView: View {
             HStack {
                 Text(isFuture ? "In arrivo questo giorno" : (isToday ? "Spese di oggi" : "Spese del giorno"))
                 Spacer()
-                Text(eur(list.reduce(0) { $0 + $1.amount } + dayRecurring.reduce(0) { $0 + $1.amount }))
+                Text(eur(list.reduce(0) { $0 + ($1.paidByMe ? $1.amount - refundedPart($1) : $1.myAmount) } + dayRecurring.reduce(0) { $0 + $1.amount }))
             }
         }
     }
@@ -516,15 +590,6 @@ struct HomeView: View {
             }
         }
 
-        if let t = activeTrip(trips) {
-            Section {
-                NavigationLink { TripDetailView(trip: t) } label: { TripHomeCard(trip: t, expenses: all) }
-                    .listRowBackground(LinearGradient(colors: [tripBlue, tripBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Button { tripAdding = t } label: {
-                    Label("Spesa del viaggio", systemImage: "plus.circle.fill").bold().foregroundStyle(tripBlue)
-                }
-            }
-        }
 
         if owedTotal > 0 {
             Section {
