@@ -8,6 +8,7 @@ import AppIntents
 final class QuickAddRouter: ObservableObject {
     static let shared = QuickAddRouter()
     @Published var show = false
+    @Published var evening = false   // "Controllo di stasera" dalla notifica
 }
 
 /// Indirizzo usato dal widget "Spesa veloce".

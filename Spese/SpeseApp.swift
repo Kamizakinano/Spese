@@ -8,11 +8,13 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
-    /// Notifica toccata: se chiede di inserire una spesa, apre "Nuova spesa".
+    /// Notifica toccata: apre "Nuova spesa" o il "Controllo di stasera", se lo chiede.
     @MainActor
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        if response.notification.request.content.userInfo["apri"] as? String == "nuova" {
-            await UIApplication.shared.open(quickAddURL)
+        switch response.notification.request.content.userInfo["apri"] as? String {
+        case "nuova": await UIApplication.shared.open(quickAddURL)
+        case "sera": await UIApplication.shared.open(eveningCheckURL)
+        default: break
         }
     }
 }

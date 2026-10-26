@@ -20,6 +20,10 @@ struct ContentView: View {
         Binding(get: { quick.show && !accounts.isEmpty && !(lockOn && locked) }, set: { quick.show = $0 })
     }
 
+    private var eveningShown: Binding<Bool> {
+        Binding(get: { quick.evening && !accounts.isEmpty && !(lockOn && locked) }, set: { quick.evening = $0 })
+    }
+
     var body: some View {
         Group {
             if accounts.isEmpty {
@@ -48,8 +52,18 @@ struct ContentView: View {
             await scheduleSubscriptionReminders(ctx)
             await scheduleUpcomingReminders(ctx)
         }
-        .onOpenURL { url in if url.host == quickAddURL.host { quick.show = true } }
+        .onOpenURL { url in
+            if url.host == quickAddURL.host { quick.show = true }
+            if url.host == eveningCheckURL.host { quick.evening = true }
+        }
         .sheet(isPresented: quickShown) { QuickAddView() }
+        .sheet(isPresented: eveningShown) {
+            EveningCheckView {
+                quick.evening = false
+                // Si apre la spesa veloce dopo che il foglio si è chiuso.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { quick.show = true }
+            }
+        }
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
             if p == .active {
