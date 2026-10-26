@@ -32,7 +32,6 @@ struct QuickAddView: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
     @Query private var all: [Expense]
-    @AppStorage("lastMethod") private var lastMethod = "carta"
     @State private var amountText = ""
     @State private var catName = ""
     @State private var method = "carta"
@@ -94,7 +93,6 @@ struct QuickAddView: View {
             .navigationTitle("Spesa veloce").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } } }
             .onAppear {
-                method = lastMethod
                 if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
                 focused = true
             }
@@ -109,7 +107,6 @@ struct QuickAddView: View {
         applyActiveTrip(e, raw: "€", trips: (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []) { _ in nil }
         ctx.insert(e)
         try? ctx.save()
-        lastMethod = method
         updateWidgetSnapshot(ctx)
         dismiss()
     }
