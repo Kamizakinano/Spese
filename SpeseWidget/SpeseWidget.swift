@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
 
 // MARK: - Dati
 
@@ -181,5 +182,21 @@ struct SpeseWidgets: WidgetBundle {
         BudgetWidget()
         SpentWidget()
         QuickAddWidget()
+        if #available(iOS 18.0, *) { QuickAddControl() }
+    }
+}
+
+// MARK: - Pulsante nel Centro di Controllo (iOS 18)
+
+@available(iOS 18.0, *)
+struct QuickAddControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "SpesaVeloceControllo") {
+            ControlWidgetButton(action: OpenURLIntent(URL(string: "spese://nuova")!)) {
+                Label("Spesa veloce", systemImage: "plus.circle.fill")
+            }
+        }
+        .displayName("Spesa veloce")
+        .description("Apre Spese per inserire subito una spesa.")
     }
 }

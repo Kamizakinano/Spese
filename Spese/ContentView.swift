@@ -43,6 +43,8 @@ struct ContentView: View {
         .task {
             if lockOn { authenticate() } else { locked = false }
             seed()
+            // I lavori di apertura partono dopo un attimo: così la Spesa veloce (o la Home) compare subito.
+            try? await Task.sleep(for: .milliseconds(700))
             generateAll()
             applyDailySavings(ctx)
             if UserDefaults.standard.object(forKey: cashCheckLastKey) == nil { UserDefaults.standard.set(Date(), forKey: cashCheckLastKey) }
@@ -67,12 +69,16 @@ struct ContentView: View {
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
             if p == .active {
-                generateAll()
-                applyDailySavings(ctx)
-                if !accounts.isEmpty { runAutoBackup(ctx) }
                 if lockOn && locked { authenticate() }
-                updateWidgetSnapshot(ctx)
-                Task { await scheduleSubscriptionReminders(ctx); await scheduleUpcomingReminders(ctx) }
+                // Dopo un attimo, per non rallentare la Spesa veloce aperta dal widget o dal Centro di Controllo.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(700))
+                    generateAll()
+                    applyDailySavings(ctx)
+                    if !accounts.isEmpty { runAutoBackup(ctx) }
+                    updateWidgetSnapshot(ctx)
+                    await scheduleSubscriptionReminders(ctx); await scheduleUpcomingReminders(ctx)
+                }
             }
             if p == .background {
                 try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa

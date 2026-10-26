@@ -31,7 +31,13 @@ struct QuickAddView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
-    @Query private var all: [Expense]
+    // Per i suggerimenti della nota bastano le spese più recenti: si apre più in fretta.
+    @Query(Self.recent) private var all: [Expense]
+    private static var recent: FetchDescriptor<Expense> {
+        var d = FetchDescriptor<Expense>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        d.fetchLimit = 800
+        return d
+    }
     @State private var amountText = ""
     @State private var catName = ""
     @State private var method = "carta"
@@ -107,7 +113,7 @@ struct QuickAddView: View {
         applyActiveTrip(e, raw: "€", trips: (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []) { _ in nil }
         ctx.insert(e)
         try? ctx.save()
-        updateWidgetSnapshot(ctx)
         dismiss()
+        updateWidgetSnapshot(ctx)
     }
 }
