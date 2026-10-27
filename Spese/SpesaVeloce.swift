@@ -8,6 +8,7 @@ import AppIntents
 final class QuickAddRouter: ObservableObject {
     static let shared = QuickAddRouter()
     @Published var show = false
+    @Published var evening = false   // "Controllo di stasera" dalla notifica
 }
 
 /// Indirizzo usato dal widget "Spesa veloce".
@@ -30,8 +31,13 @@ struct QuickAddView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
-    @Query private var all: [Expense]
-    @AppStorage("lastMethod") private var lastMethod = "carta"
+    // Per i suggerimenti della nota bastano le spese più recenti: si apre più in fretta.
+    @Query(Self.recent) private var all: [Expense]
+    private static var recent: FetchDescriptor<Expense> {
+        var d = FetchDescriptor<Expense>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        d.fetchLimit = 800
+        return d
+    }
     @State private var amountText = ""
     @State private var catName = ""
     @State private var method = "carta"
@@ -93,7 +99,6 @@ struct QuickAddView: View {
             .navigationTitle("Spesa veloce").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Annulla") { dismiss() } } }
             .onAppear {
-                method = lastMethod
                 if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
                 focused = true
             }
@@ -108,8 +113,7 @@ struct QuickAddView: View {
         applyActiveTrip(e, raw: "€", trips: (try? ctx.fetch(FetchDescriptor<Trip>())) ?? []) { _ in nil }
         ctx.insert(e)
         try? ctx.save()
-        lastMethod = method
-        updateWidgetSnapshot(ctx)
         dismiss()
+        updateWidgetSnapshot(ctx)
     }
 }

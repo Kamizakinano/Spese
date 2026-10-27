@@ -199,13 +199,41 @@ struct ForecastSection: View {
     }
 }
 
-// MARK: - Confronto con il periodo precedente
+// MARK: - Barre per categoria (Statistiche)
 
-struct ComparisonSection: View {
+enum BarsScale: String, CaseIterable, Identifiable {
+    case settimana = "Settimana", mese = "Mese", periodo = "Periodo", anno = "Anno"
+    var id: String { rawValue }
+}
+
+/// Intervallo della scala che contiene `now` e inizio di quello prima (per il confronto).
+func barsRanges(_ scale: BarsScale, now: Date = Date(), payDay: Int?) -> (current: (start: Date, end: Date), previousStart: Date) {
+    let cal = Calendar.current
+    switch scale {
+    case .anno:
+        let iv = cal.dateInterval(of: .year, for: now)
+        let s = iv?.start ?? now
+        return ((s, iv?.end ?? now), cal.date(byAdding: .year, value: -1, to: s) ?? s)
+    case .settimana, .mese, .periodo:
+        let c: CatScale = scale == .settimana ? .settimana : scale == .mese ? .mese : .periodo
+        return (scaleRange(c, anchor: now, back: 0, payDay: payDay), scaleRange(c, anchor: now, back: 1, payDay: payDay).start)
+    }
+}
+
+/// Categorie con spese nell'intervallo, dalla più alta, con il confronto sugli stessi giorni di prima.
+func categoryBars(_ expenses: [Expense], scale: BarsScale, now: Date = Date(), payDay: Int?) -> [CategoryChange] {
+    let r = barsRanges(scale, now: now, payDay: payDay)
+    return compareCategories(expenses, current: r.current, previousStart: r.previousStart, now: now)
+        .filter { $0.now > 0.005 }
+        .sorted { $0.now > $1.now }
+}
+
+struct CategoryBarsSection: View {
     @Query private var raw: [Expense]
     @Query private var trips: [Trip]
     @Query private var accounts: [Account]
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @AppStorage("barsScale") private var scale: BarsScale = .periodo
 
     private func look(_ name: String) -> (icon: String, color: Color) {
         if let c = cats.first(where: { $0.name == name }) { return (c.icon, Color(hex: c.colorHex)) }
@@ -221,49 +249,56 @@ struct ComparisonSection: View {
                 Text("nuova").foregroundStyle(.secondary)
             }
         }
-        .font(.subheadline.bold())
+        .font(.caption.bold())
     }
 
     var body: some View {
-        if let a = accounts.first, let p = payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd),
-           let prev = previousPeriod(before: p.start, day: a.salaryDay) {
-            let changes = compareCategories(statExpenses(raw, trips: trips), current: p, previousStart: prev.start)
-            if !changes.isEmpty {
-                let now = changes.reduce(0) { $0 + $1.now }, before = changes.reduce(0) { $0 + $1.before }
-                let total = CategoryChange(name: "Totale", now: now, before: before)
-                Section {
-                    let top = changes.map { max($0.now, $0.before) }.max() ?? 1
-                    ForEach(changes) { c in
-                        let l = look(c.name)
-                        NavigationLink { CategoryDetailView(category: c.name) } label: {
-                        VStack(spacing: 6) {
-                        HStack(spacing: 12) {
-                            Image(systemName: l.icon).foregroundStyle(.white)
-                                .frame(width: 32, height: 32).background(l.color, in: RoundedRectangle(cornerRadius: 8))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(c.name).lineLimit(1)
-                                Text("\(eur(c.now)) · prima \(eur(c.before))").font(.caption).foregroundStyle(.secondary)
-                            }
+        let payDay = accounts.first?.salaryDay
+        let bars = categoryBars(statExpenses(raw, trips: trips), scale: scale, payDay: payDay)
+        let r = barsRanges(scale, payDay: payDay).current
+        let total = bars.reduce(0) { $0 + $1.now }
+        let top = bars.first?.now ?? 1
+        Section {
+            Picker("Scala", selection: $scale) {
+                ForEach(BarsScale.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            HStack(alignment: .firstTextBaseline) {
+                Text(eur(total)).font(.title2.bold())
+                Spacer()
+                Text(rangeText(r)).font(.footnote).foregroundStyle(.secondary)
+            }
+            if bars.isEmpty {
+                Text("Nessuna spesa in questo intervallo.").foregroundStyle(.secondary)
+            }
+            ForEach(bars) { c in
+                let l = look(c.name)
+                NavigationLink { CategoryDetailView(category: c.name) } label: {
+                    VStack(spacing: 6) {
+                        HStack(spacing: 10) {
+                            Image(systemName: l.icon).font(.footnote).foregroundStyle(.white)
+                                .frame(width: 26, height: 26).background(l.color, in: RoundedRectangle(cornerRadius: 7))
+                            Text(c.name).lineLimit(1)
                             Spacer()
+                            Text(eur(c.now)).bold()
                             badge(c)
                         }
-                        // Barra: quanto pesa la categoria in questo periodo.
-                        ProgressView(value: c.now, total: max(top, 0.01)).tint(l.color)
+                        // Barra lunga quanto la categoria, rispetto alla più alta.
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.secondary.opacity(0.15))
+                                Capsule().fill(l.color).frame(width: max(g.size.width * c.now / max(top, 0.01), 6))
+                            }
                         }
-                        }
+                        .frame(height: 10)
                     }
-                    HStack {
-                        Text("Totale").bold()
-                        Spacer()
-                        Text("\(eur(now)) · prima \(eur(before))").font(.subheadline).foregroundStyle(.secondary)
-                        badge(total)
-                    }
-                } header: {
-                    Text("Per categoria, rispetto al periodo scorso")
-                } footer: {
-                    Text("Confronto con gli stessi giorni dopo lo stipendio precedente. Tocca una categoria per vedere le spese e confrontare altri giorni.")
+                    .padding(.vertical, 2)
                 }
             }
+        } header: {
+            Text("Per categoria")
+        } footer: {
+            Text("Il confronto ▲▼ è con gli stessi giorni dell'intervallo prima. Tocca una categoria per vedere le spese.")
         }
     }
 }

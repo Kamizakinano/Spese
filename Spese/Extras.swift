@@ -25,8 +25,8 @@ struct AddExpenseView: View {
     @State private var rateTexts: [Int: String] = [:]   // importi delle rate scritti a mano
     /// Nuovo acquisto a rate: l'importo è il totale e si creano le rate da pagare.
     private var isPlan: Bool { editing == nil && catName == installmentCategory }
-    @AppStorage("lastMethod") private var lastMethod = "carta"
     @State private var method = "carta"
+    @State private var repeatMonthly = true   // categoria Abbonamenti: si ripete ogni mese
     @State private var catName = ""
     @State private var date = Date()
     @State private var note = ""
@@ -104,6 +104,17 @@ struct AddExpenseView: View {
                     NoteSuggestionsRow(typed: note, expenses: all) { s in
                         note = s.note
                         if cats.contains(where: { $0.name == s.category }) { catName = s.category }
+                    }
+                }
+                if editing == nil && catName == subscriptionCategory {
+                    Section {
+                        Toggle("Ripeti ogni mese", isOn: $repeatMonthly)
+                        if repeatMonthly {
+                            LabeledContent("Ogni mese il giorno", value: "\(Calendar.current.component(.day, from: date))")
+                        }
+                    } footer: {
+                        Text(repeatMonthly ? "La spesa di oggi si segna subito. Dal mese prossimo si aggiunge da sola e la trovi in Statistiche → Abbonamenti, con l'avviso prima del rinnovo."
+                                           : "Spesa di una volta sola.")
                     }
                 }
                 if isPlan { planSection }
@@ -296,7 +307,7 @@ struct AddExpenseView: View {
             tripChoice = e.tripID
         } else {
             date = defaultDate
-            method = lastMethod
+            method = "carta"   // si parte sempre da Carta; Contanti solo se scelto
             if let c = presetCategory { catName = c }
             if catName.isEmpty { catName = cats.first?.name ?? "Altro" }
             focus = true
@@ -374,8 +385,10 @@ struct AddExpenseView: View {
                 e.latitude = l.coordinate.latitude; e.longitude = l.coordinate.longitude
             }
             ctx.insert(e)
+            if catName == subscriptionCategory && repeatMonthly {
+                ctx.insert(makeSubscription(note: note, amount: a, date: date))
+            }
         }
-        lastMethod = method
         dismiss()
     }
 }

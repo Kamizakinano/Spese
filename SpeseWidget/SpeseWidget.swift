@@ -183,3 +183,4 @@ struct SpeseWidgets: WidgetBundle {
         QuickAddWidget()
     }
 }
+

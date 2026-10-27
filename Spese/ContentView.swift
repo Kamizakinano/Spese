@@ -20,6 +20,10 @@ struct ContentView: View {
         Binding(get: { quick.show && !accounts.isEmpty && !(lockOn && locked) }, set: { quick.show = $0 })
     }
 
+    private var eveningShown: Binding<Bool> {
+        Binding(get: { quick.evening && !accounts.isEmpty && !(lockOn && locked) }, set: { quick.evening = $0 })
+    }
+
     var body: some View {
         Group {
             if accounts.isEmpty {
@@ -39,6 +43,8 @@ struct ContentView: View {
         .task {
             if lockOn { authenticate() } else { locked = false }
             seed()
+            // I lavori di apertura partono dopo un attimo: così la Spesa veloce (o la Home) compare subito.
+            try? await Task.sleep(for: .milliseconds(700))
             generateAll()
             applyDailySavings(ctx)
             if UserDefaults.standard.object(forKey: cashCheckLastKey) == nil { UserDefaults.standard.set(Date(), forKey: cashCheckLastKey) }
@@ -48,17 +54,31 @@ struct ContentView: View {
             await scheduleSubscriptionReminders(ctx)
             await scheduleUpcomingReminders(ctx)
         }
-        .onOpenURL { url in if url.host == quickAddURL.host { quick.show = true } }
+        .onOpenURL { url in
+            if url.host == quickAddURL.host { quick.show = true }
+            if url.host == eveningCheckURL.host { quick.evening = true }
+        }
         .sheet(isPresented: quickShown) { QuickAddView() }
+        .sheet(isPresented: eveningShown) {
+            EveningCheckView {
+                quick.evening = false
+                // Si apre la spesa veloce dopo che il foglio si è chiuso.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { quick.show = true }
+            }
+        }
         .overlay { if lockOn && locked { LockView(unlock: authenticate) } }
         .onChange(of: phase) { _, p in
             if p == .active {
-                generateAll()
-                applyDailySavings(ctx)
-                if !accounts.isEmpty { runAutoBackup(ctx) }
                 if lockOn && locked { authenticate() }
-                updateWidgetSnapshot(ctx)
-                Task { await scheduleSubscriptionReminders(ctx); await scheduleUpcomingReminders(ctx) }
+                // Dopo un attimo, per non rallentare la Spesa veloce aperta dal widget o dal Centro di Controllo.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(700))
+                    generateAll()
+                    applyDailySavings(ctx)
+                    if !accounts.isEmpty { runAutoBackup(ctx) }
+                    updateWidgetSnapshot(ctx)
+                    await scheduleSubscriptionReminders(ctx); await scheduleUpcomingReminders(ctx)
+                }
             }
             if p == .background {
                 try? ctx.save()   // non perdere le ultime modifiche se l'app viene chiusa
@@ -88,7 +108,7 @@ struct ContentView: View {
         } else {
             // Chi aveva già le categorie riceve quelle nuove prima di "Altro".
             var orders = existing.map(\.order)
-            for (name, key) in [(giftCardCategory, giftCardAddedKey), (installmentCategory, installmentAddedKey)]
+            for (name, key) in [(giftCardCategory, giftCardAddedKey), (installmentCategory, installmentAddedKey), (subscriptionCategory, subscriptionAddedKey)]
             where !UserDefaults.standard.bool(forKey: key) && !existing.contains(where: { $0.name == name }) {
                 guard let c = defaultCategories.first(where: { $0.0 == name }) else { continue }
                 let other = existing.first { $0.name == "Altro" }
@@ -100,6 +120,7 @@ struct ContentView: View {
         }
         UserDefaults.standard.set(true, forKey: giftCardAddedKey)
         UserDefaults.standard.set(true, forKey: installmentAddedKey)
+        UserDefaults.standard.set(true, forKey: subscriptionAddedKey)
     }
 
     private func generateAll() {

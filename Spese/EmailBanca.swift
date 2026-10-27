@@ -54,9 +54,13 @@ func parseBankEmail(subject: String, body: String, now: Date = Date()) -> BankEm
     }
 
     // Esercente o beneficiario: dopo "presso", "c/o", "esercente", "a favore di"…
+    // Si cerca solo prima dei saluti: in fondo c'è il testo legale ("la filiale di Londra, sita in…").
+    var head = text
+    if let r = head.range(of: "cordiali saluti", options: .caseInsensitive) { head = String(head[..<r.lowerBound]) }
     var merchant = ""
-    if let m = firstMatch(#"(?:presso|c/o|esercente:?|a favore di|beneficiario:?|verso)\s+(.+?)(?=\s+(?:in data|il giorno|il|alle ore|alle|del|con la carta|con carta|tramite|sul conto|dal conto|per un importo)\b|[.;\n]|\s+-\s|$)"#, in: text) {
+    if let m = firstMatch(#"(?:presso|c/o|esercente:?|a favore di|beneficiario:?|verso)\s+(.+?)(?=\s+(?:in data|il giorno|il|alle ore|alle|del|con la carta|con carta|tramite|sul conto|dal conto|per un importo)\b|[.;\n]|\s+-\s|$)"#, in: head) {
         merchant = m[1].trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        if merchant.count > 40 || merchant.lowercased().contains("filiale") { merchant = "" }
     }
 
     // Data: "in data 10.10.2026" o "10/10/2026".
@@ -75,6 +79,15 @@ func parseBankEmail(subject: String, body: String, now: Date = Date()) -> BankEm
 
     let salary = kind == .income && ["stipendio", "emolument", "retribuzione", "busta paga"].contains(where: low.contains)
     return BankEmail(kind: kind, amount: amount, merchant: merchant, date: date, salary: salary)
+}
+
+/// L'oggetto parla di un pagamento ma il testo è vuoto (o non ha l'importo).
+func bankEmailMissingBody(subject: String, body: String) -> Bool {
+    let s = subject.lowercased()
+    let moneyWords = ["pagamento", "addebit", "prelievo", "accredit", "bonifico"]
+    return moneyWords.contains(where: s.contains)
+        && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && parseBankEmail(subject: subject, body: body) == nil
 }
 
 /// Data da usare per il movimento: adesso se l'email parla di oggi, altrimenti il giorno scritto.
@@ -228,6 +241,12 @@ struct AddFromBankEmailIntent: AppIntent {
                 ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
                 throw error
             }
+            return .result()
+        }
+        // Email arrivata senza testo (Comandi rapidi parte prima che sia scaricata): si avvisa, così la spesa non si perde.
+        if bankEmailMissingBody(subject: subject, body: body) {
+            ApplePayLog.finish(entry, "Email arrivata senza testo: inserisci la spesa a mano")
+            notify("Pagamento della banca senza importo", "L'email è arrivata senza testo. Tocca per inserire la spesa.", openNewExpense: true)
             return .result()
         }
         guard let e = parseBankEmail(subject: subject, body: body) else {

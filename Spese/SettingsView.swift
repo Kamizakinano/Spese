@@ -11,6 +11,8 @@ struct SettingsView: View {
     @AppStorage("reminderHour") private var reminderHour = 21
     @AppStorage(budgetAlertKey) private var budgetAlert = false
     @AppStorage(weeklySummaryKey) private var weeklySummary = false
+    @AppStorage(eveningCheckKey) private var eveningCheck = false
+    @AppStorage(eveningCheckHourKey) private var eveningCheckHour = 21
     @AppStorage(cashCheckOnKey) private var cashCheckOn = true
     @AppStorage(yearRecapKey) private var yearRecapOn = false
     @AppStorage(spendMapKey) private var spendMapOn = false
@@ -108,6 +110,17 @@ struct SettingsView: View {
                             Text("Alle 21, solo se oggi hai superato il budget giornaliero").font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    Toggle(isOn: $eveningCheck) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Controllo di stasera")
+                            Text("Ogni sera le spese di oggi, per aggiungere quelle che mancano").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if eveningCheck {
+                        Picker("Ora del controllo", selection: $eveningCheckHour) {
+                            ForEach(18..<24, id: \.self) { Text("\($0):00").tag($0) }
+                        }
+                    }
                     Toggle(isOn: $weeklySummary) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Riepilogo della domenica")
@@ -131,6 +144,8 @@ struct SettingsView: View {
             .onChange(of: reminderOn) { _, v in scheduleReminder(on: v, hour: reminderHour) }
             .onChange(of: budgetAlert) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: weeklySummary) { _, _ in scheduleSmartNotifications(ctx) }
+            .onChange(of: eveningCheck) { _, _ in scheduleSmartNotifications(ctx) }
+            .onChange(of: eveningCheckHour) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: cashCheckOn) { _, _ in scheduleSmartNotifications(ctx) }
             .onChange(of: spendMapOn) { _, on in if on { SpendLocation.shared.requestPermission() } }
             .onChange(of: reminderHour) { _, h in if reminderOn { scheduleReminder(on: true, hour: h) } }

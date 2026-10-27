@@ -26,6 +26,26 @@ final class EmailBancaTests: XCTestCase {
         XCTAssertEqual(e?.merchant, "CONAD SUPERSTORE")
     }
 
+    /// Email vera del 24.10 ("è stato richiesto un pagamento", data senza anno) e caso con testo vuoto.
+    func testPagamentoRichiestoEVuoto() {
+        let now = day(2026, 10, 24)
+        let e = parseBankEmail(subject: "Intesa Sanpaolo: Pagamento con carta",
+                               body: "Gentile cliente, ti informiamo che in data 24.10 è stato richiesto un pagamento di 52,94 euro con la carta 5167_*_*_4833 presso IPERTOSANO, VIMODRONE Cordiali saluti", now: now)
+        XCTAssertEqual(e?.amount, 52.94)
+        XCTAssertEqual(e?.merchant, "IPERTOSANO, VIMODRONE")
+        XCTAssertEqual(e?.date, now)
+        XCTAssertTrue(bankEmailMissingBody(subject: "Intesa Sanpaolo: Pagamento con carta", body: ""))
+        XCTAssertFalse(bankEmailMissingBody(subject: "Novità", body: ""))
+    }
+
+    /// Il testo legale in fondo ("la filiale di Londra, sita in…") non diventa la descrizione.
+    func testFondoEmailIgnorato() {
+        let e = parseBankEmail(subject: "Intesa Sanpaolo: Accredito bonifico",
+                               body: "Gentile Cliente, ti informiamo che in data 23.10.2026 è stato accreditato un bonifico di 423,00 euro sul conto xxx034. Cordiali saluti. Servizio offerto presso la filiale di Londra, sita in 90 Queen Street, London EC4N 1SA, registrata in Inghilterra")
+        XCTAssertEqual(e?.amount, 423)
+        XCTAssertEqual(e?.merchant, "")
+    }
+
     func testAltriFormati() {
         XCTAssertEqual(parseBankEmail(subject: "Utilizzo carta", body: "Acquisto di EUR 1.234,50 presso AMAZON EU il 11.10.2026")?.amount, 1234.5)
         XCTAssertEqual(parseBankEmail(subject: "Utilizzo carta", body: "Acquisto di EUR 1.234,50 presso AMAZON EU il 11.10.2026")?.merchant, "AMAZON EU")

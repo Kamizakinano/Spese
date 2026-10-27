@@ -8,6 +8,15 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
+    /// Notifica toccata: apre "Nuova spesa" o il "Controllo di stasera", se lo chiede.
+    @MainActor
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        switch response.notification.request.content.userInfo["apri"] as? String {
+        case "nuova": await UIApplication.shared.open(quickAddURL)
+        case "sera": await UIApplication.shared.open(eveningCheckURL)
+        default: break
+        }
+    }
 }
 
 @main
@@ -178,8 +187,22 @@ let defaultCategories: [(String, String, String)] = [
     ("Svago", "popcorn", "D4A017"), ("Shopping", "bag", "E84393"),
     (giftCardCategory, "giftcard", "6C5CE7"),
     (installmentCategory, "calendar.badge.clock", "0E7C86"),
+    (subscriptionCategory, "arrow.triangle.2.circlepath", "3D7DD8"),
     ("Altro", "ellipsis.circle", "7F8C8D")
 ]
+
+/// Categoria degli abbonamenti (SIM, streaming…): da "Nuova spesa" si possono ripetere ogni mese.
+let subscriptionCategory = "Abbonamenti"
+let subscriptionAddedKey = "subscriptionCategoryAdded"
+
+/// Abbonamento che ripete ogni mese una spesa segnata oggi: parte dal mese dopo (questo è già segnato).
+func makeSubscription(note: String, amount: Double, date: Date) -> Recurring {
+    let name = note.trimmingCharacters(in: .whitespaces)
+    let r = Recurring(name: name.isEmpty ? "Abbonamento" : name, amount: amount, categoryName: subscriptionCategory,
+                      day: Calendar.current.component(.day, from: date), nextKey: nextMonthKey(monthKey(date)))
+    r.isSubscription = true
+    return r
+}
 
 /// Categoria per l'acquisto di carte regalo (di qualsiasi negozio).
 let giftCardCategory = "Gift Card"
@@ -193,9 +216,10 @@ func monthKey(_ d: Date) -> String {
 func parseAmount(_ s: String) -> Double? { Double(s.replacingOccurrences(of: ",", with: ".")) }
 func eur(_ v: Double) -> String { v.formatted(.currency(code: "EUR")) }
 
-func notify(_ title: String, _ body: String) {
+func notify(_ title: String, _ body: String, openNewExpense: Bool = false) {
     let c = UNMutableNotificationContent()
     c.title = title; c.body = body; c.sound = .default
+    if openNewExpense { c.userInfo = ["apri": "nuova"] }
     let req = UNNotificationRequest(identifier: UUID().uuidString, content: c,
                                     trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false))
     UNUserNotificationCenter.current().add(req)

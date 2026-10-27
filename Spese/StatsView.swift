@@ -67,7 +67,7 @@ struct StatsView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                ComparisonSection()
+                CategoryBarsSection()
                 Section("Andamento del mese") {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 14) {

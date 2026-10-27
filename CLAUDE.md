@@ -39,16 +39,84 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 ## Cose fatte di recente
 
-2.31 PayPal "Paga a rate" dalle email · 2.32 Home per giorno · 2.33 nuova icona e colore Ardesia · 2.34 esportazione CSV e PDF · 2.35 Home più compatta, "Questa settimana", elenco per Giorno/Settimana/Mese, foto scontrino centrata, spese ricorrenti e abbonamenti modificabili, niente doppioni tra ricorrenti e spese inserite a mano (`recurringCovered`), addebito di una ricorrente dall'email della banca spostato al giorno vero (`matchRecurringPayment` in `EmailBanca.swift`, regola generica: stesso importo ±2%, ±6 giorni). · 2.36 ricorrenti modificabili anche toccandole nella Home, trascinare il dito sulla data e sui giorni cambia giorno. · 2.37 le frecce della Home cambiano settimana (stesso giorno), il dito cambia giorno. · 2.38 nei giorni del viaggio il riquadro del viaggio sta in alto, sotto Disponibile/Carta/Contanti. · 2.39 riquadro del viaggio con cambio di oggi e "Totale vacanza" (`tripTotals`, prenotazioni comprese), "Fa parte del viaggio" nelle spese normali, nelle spese del viaggio i compagni partono spenti, rate Klarna dall'email "Prossimo pagamento programmato" (`Klarna.swift`, stessa azione "Leggi email della banca"). · 2.40 categoria "Altro": per una spesa nuova si scrive a cosa si riferisce e la riga mostra un'emoji scelta dalle parole (`AltroEmoji.swift`). · 2.41 spese pagate da altri (es. Valentina nei viaggi): nella riga "Pagato da X · devi Y €", a destra la mia parte e "di totale"; il totale del giorno conta la mia parte. · 2.42 "prova prezzi" sotto il riquadro del viaggio in valuta estera (`TripPriceCheck`): prezzo locale → euro al cambio di oggi, senza registrare. · 2.43 viaggi nuovi con "Conta nelle statistiche e nei limiti" acceso, foto dello scontrino anche nelle spese del viaggio. · 2.44 la Previsione in Statistiche toglie anche mutuo, ricorrenti e abbonamenti prima dello stipendio (`recurringDue`) e mostra il conto voce per voce. · 2.45 "Conteggio veloce" in Conti (`QuickCountView`): saldo vero di carta e contanti, la differenza diventa spesa non segnata o correzione (carta: `Income` di tipo "Correzione saldo", anche negativa). · 2.46 rate modificabili in "Nuova spesa" a rate (`adjustedSchedule`): una rata scritta a mano (es. anticipo), le altre si dividono il resto. · 2.47 nuova azione "Registra pagamento Wallet" (`WalletPaymentIntent`, importo con valuta `IntentCurrencyAmount`) da usare nell'automazione Wallet al posto di "Aggiungi spesa"; date senza anno nelle email ("in data 18.10"); niente doppioni tra Wallet ed email (`isLikelyDuplicate`: stesso importo e <30 min, o stesso negozio entro 48 ore). · 2.48 nel dettaglio del viaggio "Devi X a Valentina" in grande con "Da dove viene" (`tripDebtLines`), categorie a barre, spesa più cara, scontrini; in Home per 3 giorni dopo il rientro "Com'è andato il viaggio" (`recentlyEndedTrip`); in Statistiche barre per categoria nel confronto col periodo scorso. · 2.49 categorie delle Statistiche toccabili: `CategoryDetailView` (`CategoriaDettaglio.swift`) con Giorno/Settimana/Mese/Periodo/Scegli, "Confronta con", barre per giorno affiancate ed elenco spese. · 2.50 "Chiudi il viaggio" in Home (`TripCloseView`, `Trip.closed`): il riquadro resta finché non lo chiudi; per i debiti "Sì, in contanti/carta" o "Siamo pari così" (`TripPayment` con metodo `forgivenMethod` = "pari", escluso dal saldo in `Ledger.myPayments`). · 2.51 spese "Ti devono" già restituite contano in Home solo per la parte netta (`refundedPart`, `everydaySpend`): anello del giorno, barrette, "Speso dal…", totale del giorno; nella riga "per te X €". Idea ancora aperta: togliere dalla media giornaliera le spese grandi una tantum. · 2.52 obiettivi: "Dai risparmi liberi" / "Dalla carta" (crea un `SavingsMove`) e messaggio se i risparmi liberi non bastano; in Home "Entrate di oggi" in verde (`dayIncomeSection`). · 2.53 nuova icona "Barre arcobaleno" (sfondo scuro sfumato, 5 barre verde/blu/viola/rosa/oro, stile Apple), scelta dall'utente tra le proposte.
+2.31 PayPal "Paga a rate" dalle email · 2.32 Home per giorno · 2.33 nuova icona e colore Ardesia · 2.34 esportazione CSV e PDF · 2.35 Home più compatta, "Questa settimana", elenco per Giorno/Settimana/Mese, foto scontrino centrata, spese ricorrenti e abbonamenti modificabili, niente doppioni tra ricorrenti e spese inserite a mano (`recurringCovered`), addebito di una ricorrente dall'email della banca spostato al giorno vero (`matchRecurringPayment` in `EmailBanca.swift`, regola generica: stesso importo ±2%, ±6 giorni). · 2.36 ricorrenti modificabili anche toccandole nella Home, trascinare il dito sulla data e sui giorni cambia giorno. · 2.37 le frecce della Home cambiano settimana (stesso giorno), il dito cambia giorno. · 2.38 nei giorni del viaggio il riquadro del viaggio sta in alto, sotto Disponibile/Carta/Contanti. · 2.39 riquadro del viaggio con cambio di oggi e "Totale vacanza" (`tripTotals`, prenotazioni comprese), "Fa parte del viaggio" nelle spese normali, nelle spese del viaggio i compagni partono spenti, rate Klarna dall'email "Prossimo pagamento programmato" (`Klarna.swift`, stessa azione "Leggi email della banca"). · 2.40 categoria "Altro": per una spesa nuova si scrive a cosa si riferisce e la riga mostra un'emoji scelta dalle parole (`AltroEmoji.swift`). · 2.41 spese pagate da altri (es. Valentina nei viaggi): nella riga "Pagato da X · devi Y €", a destra la mia parte e "di totale"; il totale del giorno conta la mia parte. · 2.42 "prova prezzi" sotto il riquadro del viaggio in valuta estera (`TripPriceCheck`): prezzo locale → euro al cambio di oggi, senza registrare. · 2.43 viaggi nuovi con "Conta nelle statistiche e nei limiti" acceso, foto dello scontrino anche nelle spese del viaggio. · 2.44 la Previsione in Statistiche toglie anche mutuo, ricorrenti e abbonamenti prima dello stipendio (`recurringDue`) e mostra il conto voce per voce. · 2.45 "Conteggio veloce" in Conti (`QuickCountView`): saldo vero di carta e contanti, la differenza diventa spesa non segnata o correzione (carta: `Income` di tipo "Correzione saldo", anche negativa). · 2.46 rate modificabili in "Nuova spesa" a rate (`adjustedSchedule`): una rata scritta a mano (es. anticipo), le altre si dividono il resto. · 2.47 nuova azione "Registra pagamento Wallet" (`WalletPaymentIntent`, importo con valuta `IntentCurrencyAmount`) da usare nell'automazione Wallet al posto di "Aggiungi spesa"; date senza anno nelle email ("in data 18.10"); niente doppioni tra Wallet ed email (`isLikelyDuplicate`: stesso importo e <30 min, o stesso negozio entro 48 ore). · 2.48 nel dettaglio del viaggio "Devi X a Valentina" in grande con "Da dove viene" (`tripDebtLines`), categorie a barre, spesa più cara, scontrini; in Home per 3 giorni dopo il rientro "Com'è andato il viaggio" (`recentlyEndedTrip`); in Statistiche barre per categoria nel confronto col periodo scorso. · 2.49 categorie delle Statistiche toccabili: `CategoryDetailView` (`CategoriaDettaglio.swift`) con Giorno/Settimana/Mese/Periodo/Scegli, "Confronta con", barre per giorno affiancate ed elenco spese. · 2.50 "Chiudi il viaggio" in Home (`TripCloseView`, `Trip.closed`): il riquadro resta finché non lo chiudi; per i debiti "Sì, in contanti/carta" o "Siamo pari così" (`TripPayment` con metodo `forgivenMethod` = "pari", escluso dal saldo in `Ledger.myPayments`). · 2.51 spese "Ti devono" già restituite contano in Home solo per la parte netta (`refundedPart`, `everydaySpend`): anello del giorno, barrette, "Speso dal…", totale del giorno; nella riga "per te X €". Idea ancora aperta: togliere dalla media giornaliera le spese grandi una tantum. · 2.52 obiettivi: "Dai risparmi liberi" / "Dalla carta" (crea un `SavingsMove`) e messaggio se i risparmi liberi non bastano; in Home "Entrate di oggi" in verde (`dayIncomeSection`). · 2.53 nuova icona "Barre arcobaleno" (sfondo scuro sfumato, 5 barre verde/blu/viola/rosa/oro, stile Apple), scelta dall'utente tra le proposte. · 2.54 email della banca arrivata senza testo: riga rossa nel Registro e notifica che apre "Nuova spesa" (`bankEmailMissingBody`); esercente cercato solo prima di "Cordiali saluti" (niente più "la filiale di Londra…"). · 2.55 "Controllo di stasera" (Altro → Notifiche, ora 18–23, default 21): notifica con le spese di oggi, toccandola si apre `EveningCheckView` (in `Avvisi.swift`, indirizzo `spese://sera`) con "Aggiungi quello che manca" / "Tutto a posto"; in Statistiche "Per categoria" a barre con Settimana/Mese/Periodo/Anno e ▲▼ sugli stessi giorni prima (`CategoryBarsSection`, `categoryBars` in `Previsione.swift`), al posto del vecchio confronto. · 2.56 "Nuova spesa" e "Spesa veloce" partono sempre da Carta (tolto il ricordo dell'ultimo metodo `lastMethod`). · 2.57 Spesa veloce più rapida (lavori di apertura in `ContentView` rimandati di 0,7 s, suggerimenti nota sulle ultime 800 spese); pulsante "Spesa veloce" nel Centro di Controllo (tolto nella 2.58: sull'iPhone non funzionava). Widget 1×1 nella Home non esiste in iOS: consigliata icona di Comandi Rapidi con l'azione "Spesa veloce". · 2.58 categoria "Abbonamenti" (`subscriptionCategory`, aggiunta anche a chi ha già le categorie) e in "Nuova spesa" "Ripeti ogni mese" che crea un `Recurring` abbonamento dal mese dopo (`makeSubscription`); tolto il pulsante del Centro di Controllo.
 
 ## A che punto siamo
 
-- La 2.36 è in `main` (build 60). La 2.37 (build 61), la 2.38 (build 62), la 2.39 (build 63), la 2.40, la 2.41 (build 65), la 2.42 (build 66), la 2.43, la 2.44 (build 68), la 2.45 (build 69), la 2.46 (build 70), la 2.47, la 2.48 (build 72), la 2.49 (build 73), la 2.50 (build 74), la 2.51 (build 75), la 2.52 (build 76) e la **2.53** (build 77, IPA già inviata) sono sul ramo `claude/eloquent-feynman-wxngiu`: se l'utente conferma che funziona, PR "Versione 2.53 (già provata, build N) [skip ci]" con squash.
+- La **2.58** è in `main` (build 83; contiene 2.54–2.58). La prossima versione (2.59) parte da `origin/main` su un ramo nuovo.
+- 24.10: pagamento IPERTOSANO perso perché l'email è arrivata a Comandi Rapidi senza testo e Wallet ha dato "Impossibile comunicare con un'applicazione di supporto" (errore di iOS).
 - In attesa: un'**email vera dell'addebito del mutuo** (Intesa Sanpaolo). Quando arriva, controlla che `parseBankEmail` la legga come spesa con importo e data giusti e aggiungi una prova in `SpeseTests/EmailBancaTests.swift`.
 - In attesa: **preavviso di addebito diretto Intesa** (`esempi/intesa-preavviso-addebito.txt`, arrivato come notifica dell'app, non leggibile dai Comandi Rapidi). Chiesto all'utente se arriva anche per email/SMS. Oggi `parseBankEmail` lo leggerebbe come spesa da 170,63 € al 26.10 ma senza esercente ("da parte di" non è tra le parole cercate) e con il "+" davanti; andrebbe trattato come spesa in arrivo, non come spesa fatta, e l'addebito vero dopo non deve fare doppione.
 - Wallet in Italia: la transazione non compare nemmeno in Wallet (probabile circuito nazionale della carta Intesa), quindi l'automazione non parte: consigliato attivare gli avvisi email di Intesa e usare "Leggi email della banca"; l'utente manderà un esempio di email.
 - Email Intesa "Pagamento con carta" arrivata (`esempi/intesa-email-pagamento-carta.txt`, testo intero): data senza anno ("18.10"), "presso LIDL 2070, VILLA CARCINA". Arriva nell'app Gmail: l'automazione Email di iPhone funziona solo con l'app Mail. Da fare (proposto, in attesa di "parti"): prova in `EmailBancaTests.swift` e lettura della data senza anno ("18.10" → anno corrente, o precedente se nel futuro).
 - Wallet (aggiornato dall'utente): pagando con la carta **Mastercard** in Wallet la spesa entra da Wallet (con circa 15 min di ritardo); poi l'email Intesa dello stesso pagamento risulta "errore" (probabilmente è il controllo doppioni "Già registrata: ignorata", da verificare nel Registro). Pagando con **Bancomat** in Wallet l'automazione fallisce ma l'email funziona. Consigliato: nell'automazione Wallet selezionare solo la carta Mastercard.
+- 26.10: i Mac arm64 di GitHub erano pieni ("The job was not acquired by Runner"), la CI ora usa `macos-15-intel` (più lenta, circa 20 min). Si può tornare a `macos-15` quando la coda passa.
 - Se la CI dice "L'app si è chiusa da sola (crash)", leggi le annotazioni: ora contengono il motivo e le righe del codice. È già successo due volte senza cambiare il codice (2.29 e 2.35): un nuovo tentativo è passato.
 
 Idee rimaste in sospeso: barre per categoria nelle Statistiche; versione Android (andrebbe riscritta); rinnovi PayPal da email (l'utente manderà un esempio).
+
+# CLAUDE.md
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
