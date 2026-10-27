@@ -108,7 +108,7 @@ struct ContentView: View {
         } else {
             // Chi aveva già le categorie riceve quelle nuove prima di "Altro".
             var orders = existing.map(\.order)
-            for (name, key) in [(giftCardCategory, giftCardAddedKey), (installmentCategory, installmentAddedKey)]
+            for (name, key) in [(giftCardCategory, giftCardAddedKey), (installmentCategory, installmentAddedKey), (subscriptionCategory, subscriptionAddedKey)]
             where !UserDefaults.standard.bool(forKey: key) && !existing.contains(where: { $0.name == name }) {
                 guard let c = defaultCategories.first(where: { $0.0 == name }) else { continue }
                 let other = existing.first { $0.name == "Altro" }
@@ -120,6 +120,7 @@ struct ContentView: View {
         }
         UserDefaults.standard.set(true, forKey: giftCardAddedKey)
         UserDefaults.standard.set(true, forKey: installmentAddedKey)
+        UserDefaults.standard.set(true, forKey: subscriptionAddedKey)
     }
 
     private func generateAll() {

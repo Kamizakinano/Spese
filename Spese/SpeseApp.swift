@@ -187,8 +187,22 @@ let defaultCategories: [(String, String, String)] = [
     ("Svago", "popcorn", "D4A017"), ("Shopping", "bag", "E84393"),
     (giftCardCategory, "giftcard", "6C5CE7"),
     (installmentCategory, "calendar.badge.clock", "0E7C86"),
+    (subscriptionCategory, "arrow.triangle.2.circlepath", "3D7DD8"),
     ("Altro", "ellipsis.circle", "7F8C8D")
 ]
+
+/// Categoria degli abbonamenti (SIM, streaming…): da "Nuova spesa" si possono ripetere ogni mese.
+let subscriptionCategory = "Abbonamenti"
+let subscriptionAddedKey = "subscriptionCategoryAdded"
+
+/// Abbonamento che ripete ogni mese una spesa segnata oggi: parte dal mese dopo (questo è già segnato).
+func makeSubscription(note: String, amount: Double, date: Date) -> Recurring {
+    let name = note.trimmingCharacters(in: .whitespaces)
+    let r = Recurring(name: name.isEmpty ? "Abbonamento" : name, amount: amount, categoryName: subscriptionCategory,
+                      day: Calendar.current.component(.day, from: date), nextKey: nextMonthKey(monthKey(date)))
+    r.isSubscription = true
+    return r
+}
 
 /// Categoria per l'acquisto di carte regalo (di qualsiasi negozio).
 let giftCardCategory = "Gift Card"
