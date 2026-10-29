@@ -199,7 +199,7 @@ func matchRecurringPayment(amount: Double, when: Date, ctx: ModelContext) -> Str
 /// Azione per l'automazione "Email" di Comandi rapidi: legge l'email della banca e registra il movimento.
 struct AddFromBankEmailIntent: AppIntent {
     static let title: LocalizedStringResource = "Leggi email della banca"
-    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) di PayPal (rata di Paga a rate) o di Klarna (prossimo pagamento) e registra il movimento in Spese.")
+    static let description = IntentDescription("Legge un'email della banca (pagamento, bonifico, prelievo) di PayPal (rata di Paga a rate, o SMS \"hai inviato\") o di Klarna (prossimo pagamento) e registra il movimento in Spese.")
     static let openAppWhenRun = false
 
     @Parameter(title: "Oggetto", default: "") var subject: String
@@ -237,6 +237,21 @@ struct AddFromBankEmailIntent: AppIntent {
                 updateWidgetSnapshot(ctx)
                 runAutoBackup(ctx)
                 notify("PayPal", result)
+            } catch {
+                ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
+                throw error
+            }
+            return .result()
+        }
+        // SMS di PayPal (43111): soldi inviati a una persona.
+        if let p = parsePayPalSentMessage(subject + "\n" + body) {
+            do {
+                let ctx = SharedStore.container.mainContext
+                let result = try recordPayPalSent(amount: p.amount, person: p.person, ctx: ctx)
+                ApplePayLog.finish(entry, result)
+                updateWidgetSnapshot(ctx)
+                runAutoBackup(ctx)
+                notify("Da PayPal", result)
             } catch {
                 ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
                 throw error
