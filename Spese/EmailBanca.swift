@@ -1,3 +1,4 @@
+import SwiftUI
 import Foundation
 import SwiftData
 import AppIntents
@@ -260,8 +261,9 @@ struct AddFromBankEmailIntent: AppIntent {
         }
         // Email arrivata senza testo (Comandi rapidi parte prima che sia scaricata): si avvisa, così la spesa non si perde.
         if bankEmailMissingBody(subject: subject, body: body) {
-            ApplePayLog.finish(entry, "Email arrivata senza testo: inserisci la spesa a mano")
-            notify("Pagamento della banca senza importo", "L'email è arrivata senza testo. Tocca per inserire la spesa.", openNewExpense: true)
+            ApplePayLog.finish(entry, "Email arrivata senza testo: completala in Home")
+            addPendingPayment(Date())
+            notify("Pagamento della banca senza importo", "L'email è arrivata senza testo. Apri Spese e scrivi l'importo nel riquadro in Home.")
             return .result()
         }
         guard let e = parseBankEmail(subject: subject, body: body) else {
@@ -299,5 +301,74 @@ func isLikelyDuplicate(amount: Double, merchant: String, when: Date, expenses: [
         let dt = abs(x.date.timeIntervalSince(when))
         if dt < 30 * 60 { return true }
         return dt < 48 * 3600 && !k.isEmpty && key(x.note) == k
+    }
+}
+
+// MARK: - Pagamenti da completare (email della banca arrivata senza importo)
+
+let pendingPaymentsKey = "pendingBankPayments"
+
+/// Orari dei pagamenti da completare, dal più vecchio.
+func pendingPayments(_ d: UserDefaults = .standard) -> [Date] {
+    ((d.array(forKey: pendingPaymentsKey) as? [Double]) ?? []).map { Date(timeIntervalSince1970: $0) }
+}
+
+func addPendingPayment(_ at: Date, _ d: UserDefaults = .standard) {
+    d.set(((d.array(forKey: pendingPaymentsKey) as? [Double]) ?? []) + [at.timeIntervalSince1970], forKey: pendingPaymentsKey)
+}
+
+func removePendingPayment(_ at: Date, _ d: UserDefaults = .standard) {
+    let left = ((d.array(forKey: pendingPaymentsKey) as? [Double]) ?? []).filter { abs($0 - at.timeIntervalSince1970) > 0.5 }
+    d.set(left, forKey: pendingPaymentsKey)
+}
+
+/// Riquadro in Home: importo da scrivere per ogni pagamento arrivato senza testo.
+struct PendingPaymentsSection: View {
+    @Environment(\.modelContext) private var ctx
+    @Environment(\.scenePhase) private var phase
+    @State private var items: [Date] = pendingPayments()
+    @State private var texts: [Date: String] = [:]
+
+    var body: some View {
+        ForEach(items, id: \.self) { at in
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Pagamento da completare", systemImage: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(.orange)
+                    Text("Intesa ha avvisato un pagamento con carta \(Calendar.current.isDateInToday(at) ? "oggi" : at.formatted(.dateTime.day().month(.abbreviated))) alle \(at.formatted(date: .omitted, time: .shortened)), ma l'email è arrivata senza importo.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        TextField("0,00 €", text: Binding(get: { texts[at] ?? "" }, set: { texts[at] = $0 }))
+                            .keyboardType(.decimalPad).font(.title3.bold()).multilineTextAlignment(.center)
+                            .padding(8).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                        Button("Salva") { save(at) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled((parseAmount(texts[at] ?? "") ?? 0) <= 0)
+                    }
+                    Button("Non era un pagamento") { remove(at) }
+                        .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .trailing)
+                        .buttonStyle(.plain)
+                }
+                .padding(.vertical, 4)
+            }
+            .listRowBackground(Color.orange.opacity(0.12))
+        }
+        .onChange(of: phase) { _, p in if p == .active { items = pendingPayments() } }
+        .onAppear { items = pendingPayments() }
+    }
+
+    private func save(_ at: Date) {
+        guard let a = parseAmount(texts[at] ?? ""), a > 0 else { return }
+        let e = Expense(amount: a, categoryName: otherCategory, date: at, note: "Pagamento con carta")
+        e.method = "carta"
+        ctx.insert(e)
+        try? ctx.save()
+        updateWidgetSnapshot(ctx)
+        remove(at)
+    }
+
+    private func remove(_ at: Date) {
+        removePendingPayment(at)
+        items = pendingPayments()
+        texts[at] = nil
     }
 }

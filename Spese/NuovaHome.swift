@@ -194,6 +194,9 @@ struct HomeView: View {
                 // Trascinando il dito sulla data o sui giorni si cambia giorno.
                 .simultaneousGesture(daySwipe)
 
+                // Pagamenti della banca arrivati senza importo: restano qui finché non li completi.
+                PendingPaymentsSection()
+
                 Section { ringCard; chips }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
