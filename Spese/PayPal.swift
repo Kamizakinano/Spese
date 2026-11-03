@@ -172,3 +172,29 @@ func updateInstallmentPaidBefore(_ rates: [Expense], before: Int) {
     }
     renumber(rates)
 }
+
+// MARK: - Soldi inviati con PayPal a una persona (SMS dal 43111)
+
+/// "PayPal: hai inviato 25,00 € EUR a Alessandro bosio . Accedi…" → importo e persona.
+/// nil se il testo non è di questo tipo.
+func parsePayPalSentMessage(_ text: String) -> (amount: Double, person: String)? {
+    let t = text.replacingOccurrences(of: "\u{00A0}", with: " ")
+    guard let m = matches(#"hai inviato\s+€?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:€\s*)?(?:EUR\s*)?a\s+(.+?)\s*(?:\.|$|\n)"#, in: t).first,
+          let amount = parseLooseAmount(m[1]), amount > 0 else { return nil }
+    let person = m[2].trimmingCharacters(in: .whitespacesAndNewlines)
+    return person.isEmpty ? nil : (amount, person)
+}
+
+/// Registra i soldi inviati con PayPal come spesa in "Altro", con il nome della persona nella nota.
+@MainActor
+func recordPayPalSent(amount: Double, person: String, ctx: ModelContext, now: Date = Date()) throws -> String {
+    let all = (try? ctx.fetch(FetchDescriptor<Expense>())) ?? []
+    if isLikelyDuplicate(amount: amount, merchant: person, when: now, expenses: all) {
+        return "Già registrata (stesso pagamento): ignorata"
+    }
+    let e = Expense(amount: amount, categoryName: otherCategory, date: now, note: person)
+    e.method = "carta"
+    ctx.insert(e)
+    try ctx.save()
+    return "Spesa registrata: \(eur(amount)) a \(person)"
+}
