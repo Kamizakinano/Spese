@@ -84,6 +84,28 @@ func spendLevel(_ amount: Double, max top: Double) -> Int {
 // MARK: - Dati comuni alle sezioni
 
 /// Raccoglie dal database quello che serve a previsione e confronto.
+/// Cosa conta la Previsione: solo la carta, solo i contanti o tutti e due.
+enum ForecastScope: String, CaseIterable, Identifiable {
+    case carta, contanti, entrambi
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .carta: return "Solo carta"
+        case .contanti: return "Solo contanti"
+        case .entrambi: return "Carta e contanti"
+        }
+    }
+    /// La spesa conta in questa scelta?
+    func includes(_ e: Expense) -> Bool {
+        switch self {
+        case .carta: return !e.isCash
+        case .contanti: return e.isCash
+        case .entrambi: return true
+        }
+    }
+}
+let forecastScopeKey = "forecastScope"
+
 private struct PeriodData {
     let all: [Expense]
     let available: Double
@@ -91,10 +113,11 @@ private struct PeriodData {
     let previousStart: Date?
 
     init(all raw: [Expense], trips: [Trip], incomes: [Income], moves: [SavingsMove], cash: [CashMove],
-         account: Account?, payments: [TripPayment]) {
+         account: Account?, payments: [TripPayment], scope: ForecastScope = .entrambi) {
         let l = Ledger(incomes: incomes, expenses: raw, moves: moves, cash: cash, account: account, payments: payments)
-        all = statExpenses(raw, trips: trips)
-        available = l.figures(for: Date()).left + l.cashBalance()
+        all = statExpenses(raw, trips: trips).filter { scope.includes($0) }
+        let card = l.figures(for: Date()).left, money = l.cashBalance()
+        available = scope == .carta ? card : scope == .contanti ? money : card + money
         if let a = account, let p = payPeriod(day: a.salaryDay, customStart: a.periodStart, customEnd: a.periodEnd) {
             period = p
             previousStart = previousPeriod(before: p.start, day: a.salaryDay)?.start
@@ -120,21 +143,30 @@ struct ForecastSection: View {
     @Query private var accounts: [Account]
     @Query private var payments: [TripPayment]
     @Query private var recurring: [Recurring]
+    @AppStorage(forecastScopeKey) private var scope: ForecastScope = .entrambi
+    @State private var choosing = false
 
     private struct Point: Identifiable { let date: Date; let value: Double; let forecast: Bool; var id: String { "\(date)\(forecast)" } }
 
     var body: some View {
         let d = PeriodData(all: raw, trips: trips, incomes: incomes, moves: moves, cash: cash,
-                           account: accounts.first, payments: payments)
+                           account: accounts.first, payments: payments, scope: scope)
         if let p = d.period {
-            let soon = statExpenses(raw, trips: trips).filter { $0.date >= Ledger.endOfToday && $0.date < p.end && $0.paidByMe }
+            let soon = statExpenses(raw, trips: trips).filter { $0.date >= Ledger.endOfToday && $0.date < p.end && $0.paidByMe && scope.includes($0) }
                 .reduce(0) { $0 + $1.myAmount }
-            let rec = recurringDue(recurring, expenses: raw, before: p.end)
+            // Mutuo, ricorrenti e abbonamenti si pagano dal conto: non contano per i soli contanti.
+            let rec = scope == .contanti ? 0 : recurringDue(recurring, expenses: raw, before: p.end)
             let f = makeForecast(available: d.available, spent: d.spent(from: p.start, to: Ledger.endOfToday), period: p, upcoming: soon + rec)
             Section("Previsione") {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")
-                        .font(.footnote).opacity(0.85)
+                    HStack(alignment: .top) {
+                        Text("Di questo passo, il \(f.lastDay.formatted(.dateTime.day().month(.wide))) avrai")
+                            .font(.footnote).opacity(0.85)
+                        Spacer()
+                        Text(scope.title + " ›").font(.caption.bold())
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 7))
+                    }
                     Text((f.projected >= 0 ? "+ " : "− ") + eur(abs(f.projected)))
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text("Spendi in media \(eur(f.avgPerDay)) al giorno, il budget è \(eur(f.budgetPerDay))")
@@ -156,6 +188,9 @@ struct ForecastSection: View {
                             in: RoundedRectangle(cornerRadius: 18))
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .listRowBackground(Color.clear)
+                .contentShape(Rectangle())
+                .onTapGesture { choosing = true }
+                .sheet(isPresented: $choosing) { scopePicker }
 
                 Chart(points(d, f)) { pt in
                     LineMark(x: .value("Giorno", pt.date), y: .value("Rimasti", pt.value),
@@ -174,6 +209,30 @@ struct ForecastSection: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// Menu "Cosa contare" (toccando il riquadro blu).
+    private var scopePicker: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(ForecastScope.allCases) { s in
+                        Button { scope = s } label: {
+                            HStack {
+                                Text(s.title).foregroundStyle(.primary)
+                                Spacer()
+                                if s == scope { Image(systemName: "checkmark").bold() }
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Solo carta: i soldi sulla carta e la media delle spese pagate con carta. Solo contanti: i contanti nel portafoglio e la media delle spese in contanti.")
+                }
+            }
+            .navigationTitle("Cosa contare").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Fine") { choosing = false } } }
+        }
+        .presentationDetents([.medium])
     }
 
     private func line(_ label: String, _ v: Double) -> some View {
