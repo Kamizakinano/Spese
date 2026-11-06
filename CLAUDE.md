@@ -53,6 +53,9 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 - 26.10: i Mac arm64 di GitHub erano pieni ("The job was not acquired by Runner"), la CI ora usa `macos-15-intel` (più lenta, circa 20 min). Si può tornare a `macos-15` quando la coda passa.
 - Se la CI dice "L'app si è chiusa da sola (crash)", leggi le annotazioni: ora contengono il motivo e le righe del codice. È già successo due volte senza cambiare il codice (2.29 e 2.35): un nuovo tentativo è passato.
 
+- Proposta (in attesa di "parti" e di un file di esempio Intesa Excel/CSV): **controllo estratto conto** in Conti. Si importa il file della banca, anche con giorni già importati (niente doppioni). Se tutto torna nessun avviso, solo ✓ nell'elenco dei controlli; se no riquadro in Home e lista "Mancano / Importo diverso / Forse doppia" con Aggiungi / Correggi / Togli. Niente SMS Intesa (a pagamento).
+- L'utente prima o poi **pubblicherà l'app sull'App Store**: niente cose legate solo a Intesa o ai suoi dati (lettura file con colonne riconosciute in modo generico), testi pensati per chiunque.
+
 Idee rimaste in sospeso: barre per categoria nelle Statistiche; versione Android (andrebbe riscritta); rinnovi PayPal da email (l'utente manderà un esempio).
 
 # CLAUDE.md
