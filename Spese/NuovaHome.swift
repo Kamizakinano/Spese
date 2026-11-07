@@ -96,6 +96,7 @@ struct HomeView: View {
     @State private var showPeriod = false
     @State private var showMonths = false
     @State private var openMonth: Date?
+    @State private var searchOnOpen = false   // la lente apre l'elenco con la ricerca già attiva
     @AppStorage(listScaleKey) private var listScale = ListScale.month.rawValue
     @State private var editing: Expense?
     @State private var editingRecurring: Recurring?
@@ -259,12 +260,13 @@ struct HomeView: View {
                     .accessibilityLabel("Scegli il mese")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { openMonth = day } label: { Image(systemName: "magnifyingglass") }
+                    Button { searchOnOpen = true; openMonth = day } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("Cerca nelle spese del mese")
                 }
             }
+            .onChange(of: openMonth) { _, m in if m == nil { searchOnOpen = false } }
             .navigationDestination(item: $openMonth) { m in
-                MonthView(month: m) { picked in
+                MonthView(month: m, startSearch: searchOnOpen) { picked in
                     day = cal.startOfDay(for: picked)
                     openMonth = nil
                 }
@@ -863,12 +865,15 @@ struct MonthView: View {
     @AppStorage(listScaleKey) private var scaleRaw = ListScale.month.rawValue
     @State private var mode = 0
     @State private var search = ""
+    @State private var searching = false
+    private let startSearch: Bool
     @State private var filterCat = ""
     @State private var filterMethod = ""
     @State private var editing: Expense?
 
-    init(month: Date, onOpenDay: @escaping (Date) -> Void) {
+    init(month: Date, startSearch: Bool = false, onOpenDay: @escaping (Date) -> Void) {
         _month = State(initialValue: month)
+        self.startSearch = startSearch
         self.onOpenDay = onOpenDay
     }
 
@@ -962,7 +967,13 @@ struct MonthView: View {
             if mode == 0 { listSections } else { categorySections }
         }
         .navigationTitle("Elenco spese").navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $search, prompt: "Cerca spese")
+        .searchable(text: $search, isPresented: $searching, prompt: "Cerca in tutte le spese")
+        .task {
+            // Dalla lente: casella di ricerca subito attiva, con la tastiera.
+            guard startSearch else { return }
+            try? await Task.sleep(for: .milliseconds(400))
+            searching = true
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
