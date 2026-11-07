@@ -196,6 +196,8 @@ struct HomeView: View {
 
                 // Pagamenti della banca arrivati senza importo: restano qui finché non li completi.
                 PendingPaymentsSection()
+                // Estratto conto importato con differenze ancora da vedere.
+                BankPendingSection()
 
                 Section { ringCard; chips }
                     .listRowSeparator(.hidden)
