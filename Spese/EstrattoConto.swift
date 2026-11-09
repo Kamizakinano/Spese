@@ -11,6 +11,7 @@ struct BankRow: Codable, Equatable, Hashable {
     var amount: Double      // positivo: quanto è uscito
     var merchant: String
     var booked: Bool        // false = non ancora contabilizzato
+    var bankCategory: String? = nil   // categoria scritta dalla banca ("Ristoranti e bar"), se c'è
     /// Per ricordare le righe che l'utente ha scelto di non aggiungere.
     var key: String { "\(Int(date.timeIntervalSince1970 / 86400))|\(Int((amount * 100).rounded()))|\(merchant.lowercased())" }
 }
@@ -154,8 +155,42 @@ private func merchantName(operation: String, details: String) -> String {
     for prefix in ["Addebito diretto disposto a favore di ", "Pagamento a favore di ", "Bonifico a favore di "]
     where op.lowercased().hasPrefix(prefix.lowercased()) { op = String(op.dropFirst(prefix.count)) }
     let generic = ["pagamento tramite pos", "pagamento pos", "pagamento", "pagamento carta", "addebito"]
-    if op.isEmpty || generic.contains(op.lowercased()) { return details.trimmingCharacters(in: .whitespaces) }
-    return op
+    if op.isEmpty || generic.contains(op.lowercased()) { op = details.trimmingCharacters(in: .whitespaces) }
+    return cleanMerchant(op)
+}
+
+/// "Paypal *asos Com Eu 35…" → "Asos (PayPal)", "MGP*Vinted Vilnius" → "Vinted".
+func cleanMerchant(_ s: String) -> String {
+    if let m = allMatches(#"(?i)^paypal\s*\*\s*([A-Za-z0-9]+)"#, s).first {
+        return m[1].prefix(1).uppercased() + m[1].dropFirst().lowercased() + " (PayPal)"
+    }
+    if let m = allMatches(#"^[A-Z]{2,4}\*\s*([A-Za-z0-9]+)"#, s).first { return m[1] }
+    return s
+}
+
+/// Categoria della banca → categoria dell'app (nil se generica o sconosciuta).
+func appCategory(fromBank bank: String, available: [String]) -> String? {
+    let b = bank.lowercased()
+    let map: [(String, [String])] = [
+        ("Alimentari", ["alimentari", "supermercat"]),
+        ("Pranzi/Cene fuori", ["ristorant", "bar", "fast food"]),
+        ("Trasporti", ["pedaggi", "telepass", "carburant", "trasport", "parchegg", "mezzi pubblici", "auto"]),
+        ("Viaggi", ["viaggi", "hotel", "alloggi", "voli"]),
+        ("Salute", ["salute", "farmaci", "medic", "sanit"]),
+        ("Shopping", ["abbigliament", "shopping", "elettronica", "acquisti online"]),
+        ("Svago", ["tempo libero", "spettacol", "sport", "hobby", "intrattenimento"]),
+        ("Abbonamenti", ["abbonament", "telefon"]),
+        ("Casa e bollette", ["utenze", "bollett", "affitto", "mutuo", "casa", "condominio"])
+    ]
+    for (cat, keys) in map where keys.contains(where: b.contains) && available.contains(cat) { return cat }
+    return nil
+}
+
+/// Categoria per una spesa dall'estratto conto: come l'hai corretta tu, poi la banca, poi il nome del negozio.
+func categoryForBankRow(_ r: BankRow, available: [String]) -> String {
+    learnedCategory(merchant: r.merchant, available: available)
+        ?? r.bankCategory.flatMap { appCategory(fromBank: $0, available: available) }
+        ?? guessCategory(merchant: r.merchant, available: available)
 }
 
 /// Le uscite del file: cerca da solo la riga dei titoli (Data… Importo) e le colonne.
@@ -172,6 +207,7 @@ func bankRows(from table: [[String]]) -> [BankRow] {
     let opI = idx(header, ["operazione", "descrizione", "causale", "description"])
     let detI = idx(header, ["dettagli", "descrizione estesa", "details"])
     let bookedI = idx(header, ["contabilizzazione", "stato"])
+    let catI = idx(header, ["categoria", "category"])
     func cell(_ r: [String], _ i: Int?) -> String { i.flatMap { $0 < r.count ? r[$0] : nil } ?? "" }
     return table[(h + 1)...].compactMap { r in
         guard let date = cellDate(cell(r, dateI)) else { return nil }
@@ -182,7 +218,8 @@ func bankRows(from table: [[String]]) -> [BankRow] {
         let details = cell(r, detI)
         let booked = !["no", "non contabilizzato", "in attesa"].contains(cell(r, bookedI).lowercased())
         return BankRow(date: realDay(in: details, booked: date) ?? date, amount: -v,
-                       merchant: merchantName(operation: cell(r, opI), details: details), booked: booked)
+                       merchant: merchantName(operation: cell(r, opI), details: details), booked: booked,
+                       bankCategory: cell(r, catI).isEmpty ? nil : cell(r, catI).trimmingCharacters(in: .whitespaces))
     }
 }
 
@@ -289,13 +326,27 @@ struct BankCheckView: View {
             if !checks.isEmpty {
                 Section("Controlli fatti") {
                     ForEach(checks.reversed(), id: \.self) { c in
-                        HStack {
-                            Text(rangeText((c.from, Calendar.current.date(byAdding: .day, value: 1, to: c.to) ?? c.to)))
-                            Spacer()
-                            Text(c.differences == 0 ? "✓ tutto a posto" : "\(c.differences) differenze")
-                                .foregroundStyle(c.differences == 0 ? .green : .orange)
+                        let open = c.differences > 0 && c == checks.last && !BankStore.pending.isEmpty
+                        Button {
+                            if open { rows = BankStore.pending; showDiffs = true }
+                        } label: {
+                            HStack {
+                                Text(rangeText((c.from, Calendar.current.date(byAdding: .day, value: 1, to: c.to) ?? c.to))).foregroundStyle(.primary)
+                                Spacer()
+                                Text(c.differences == 0 ? "✓ tutto a posto" : "\(c.differences) differenze")
+                                    .foregroundStyle(c.differences == 0 ? .green : .orange)
+                                if open { Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary) }
+                            }
                         }
                     }
+                }
+            }
+            let fixable = altroFromBank()
+            if !fixable.isEmpty {
+                Section {
+                    Button("Sistema le categorie (\(fixable.count))") { fixCategories(fixable) }
+                } footer: {
+                    Text("Spese aggiunte dall'estratto conto e finite in Altro: prende la categoria della banca o del negozio. Quelle che hai messo tu in Altro restano dove sono.")
                 }
             }
         }
@@ -319,6 +370,33 @@ struct BankCheckView: View {
         }
         .sheet(isPresented: $showDiffs) { BankDiffView(rows: rows) }
     }
+
+    @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+
+    /// Spese in Altro arrivate dall'estratto conto (segnate, o uguali a una riga dell'ultimo file), con la riga della banca.
+    private func altroFromBank() -> [(Expense, BankRow)] {
+        let file = BankStore.pending
+        let cal = Calendar.current
+        return expenses.compactMap { e in
+            guard e.categoryRaw == otherCategory, !e.isCash else { return nil }
+            let clean = cleanMerchant(e.note)
+            let row = file.first { cal.isDate($0.date, inSameDayAs: e.date) && abs($0.amount - e.amount) < 0.005 && ($0.merchant == e.note || $0.merchant == clean) }
+            guard e.fromBank || row != nil else { return nil }
+            var r = row ?? BankRow(date: e.date, amount: e.amount, merchant: clean, booked: true)
+            r.merchant = clean
+            return categoryForBankRow(r, available: cats.map(\.name)) == otherCategory ? nil : (e, r)
+        }
+    }
+
+    private func fixCategories(_ list: [(Expense, BankRow)]) {
+        for (e, r) in list {
+            e.categoryRaw = categoryForBankRow(r, available: cats.map(\.name))
+            e.note = r.merchant
+            e.fromBank = true
+        }
+        try? ctx.save()
+        updateWidgetSnapshot(ctx)
+    }
 }
 
 /// Elenco delle differenze: Aggiungi / Non aggiungere, Correggi, Togli.
@@ -341,7 +419,16 @@ struct BankDiffView: View {
                 }
                 let missing = d.compactMap { if case .missing(let r) = $0 { return r } else { return nil } }
                 if !missing.isEmpty {
-                    Section("Mancano nell'app") {
+                    let booked = missing.filter(\.booked).count
+                    if booked > 1 {
+                        Section {
+                            Button("Aggiungi tutte (\(booked))") { addAll(missing) }
+                                .bold().frame(maxWidth: .infinity)
+                        } footer: {
+                            Text("Aggiunge le spese contabilizzate, ognuna al suo giorno e con la sua categoria. Quelle non ancora contabilizzate restano da scegliere una per una.")
+                        }
+                    }
+                    Section("Mancano nell'app (\(missing.count))") {
                         ForEach(missing, id: \.self) { r in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack { Text(r.merchant).lineLimit(1); Spacer(); Text(eur(r.amount)).bold() }
@@ -402,11 +489,17 @@ struct BankDiffView: View {
 
     private func day(_ d: Date) -> String { d.formatted(.dateTime.day().month(.abbreviated)) }
 
-    private func add(_ r: BankRow) {
-        let cat = guessCategory(merchant: r.merchant, available: cats.map(\.name))
-        let e = Expense(amount: r.amount, categoryName: cat, date: r.date, note: r.merchant)
+    private func add(_ r: BankRow, save: Bool = true) {
+        let e = Expense(amount: r.amount, categoryName: categoryForBankRow(r, available: cats.map(\.name)), date: r.date, note: r.merchant)
         e.method = "carta"
+        e.fromBank = true
         ctx.insert(e)
+        if save { try? ctx.save(); updateWidgetSnapshot(ctx) }
+    }
+
+    /// "Aggiungi tutte": le spese mancanti già contabilizzate (le altre si scelgono una per una).
+    private func addAll(_ rows: [BankRow]) {
+        for r in rows where r.booked { add(r, save: false) }
         try? ctx.save()
         updateWidgetSnapshot(ctx)
     }

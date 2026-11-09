@@ -53,4 +53,19 @@ final class EstrattoContoTests: XCTestCase {
         XCTAssertEqual(compareBank(rows, with: [lidl, conad, doppia1, doppia2], ignored: [rows[3].key]).count, 2)
         XCTAssertTrue(compareBank(Array(rows.prefix(1)), with: [lidl]).isEmpty)
     }
+
+    func testCategorieDallaBanca() {
+        let cats = ["Alimentari", "Pranzi/Cene fuori", "Trasporti", "Shopping", "Casa e bollette", "Altro"]
+        let rows = bankRows(from: [["Data", "Operazione", "Dettagli", "Categoria", "Importo"],
+                                   ["03/11/2026", "Mc Donald's", "Pagamento su POS", "Ristoranti e bar", "-6,40"],
+                                   ["03/11/2026", "Addebito diretto disposto a favore di TELEPAS", "", "Pedaggi e Telepass", "-100,67"],
+                                   ["02/01/2026", "Paypal *asos Com Eu 35314369001", "", "Altre uscite", "-9,91"],
+                                   ["05/01/2026", "MGP*Vinted Vilnius", "", "Altre uscite", "-3,44"],
+                                   ["05/01/2026", "Importo periodico", "", "Altre uscite", "-4,00"]])
+        XCTAssertEqual(rows.map { categoryForBankRow($0, available: cats) },
+                       ["Pranzi/Cene fuori", "Trasporti", "Shopping", "Shopping", "Altro"])
+        XCTAssertEqual(rows[2].merchant, "Asos (PayPal)")
+        XCTAssertEqual(rows[3].merchant, "Vinted")
+        XCTAssertEqual(guessCategory(merchant: "Mc Donald's", available: cats, defaults: UserDefaults(suiteName: "prova-cat")!), "Pranzi/Cene fuori")
+    }
 }
