@@ -216,6 +216,8 @@ func bankRows(from table: [[String]]) -> [BankRow] {
         else if let v = parseLooseSigned(cell(r, outI)), v != 0 { value = -abs(v) }
         guard let v = value, v < 0 else { return nil }   // solo le uscite
         let details = cell(r, detI)
+        // Prelievi, giroconti e trasferimenti tra i propri conti non sono spese.
+        guard !looksLikeNotExpense(cell(r, opI) + " " + details) else { return nil }
         let booked = !["no", "non contabilizzato", "in attesa"].contains(cell(r, bookedI).lowercased())
         return BankRow(date: realDay(in: details, booked: date) ?? date, amount: -v,
                        merchant: merchantName(operation: cell(r, opI), details: details), booked: booked,
@@ -231,6 +233,27 @@ func parseLooseSigned(_ s: String) -> Double? {
 }
 
 // MARK: Confronto
+
+/// Uscite che non sono spese: prelievi (vanno nei contanti), giroconti e trasferimenti tra i propri conti.
+func looksLikeNotExpense(_ text: String) -> Bool {
+    let t = text.lowercased()
+    return ["prelievo", "prelevamento", "giroconto", "girofondi", "salvadanaio", "trasferimento tra",
+            "trasferimento a proprio", "bonifico a proprio", "bonifico verso propri", "ricarica carta"].contains(where: t.contains)
+}
+
+/// Una spesa grande (mutuo, rate) già nell'app con un importo un po' diverso: ±2% ed entro 6 giorni.
+private func nearBigPayment(_ e: Expense, amount: Double, date: Date) -> Bool {
+    amount >= 50 && abs(e.myAmount - amount) <= amount * 0.02 && abs(e.date.timeIntervalSince(date)) <= 6.5 * 86400
+}
+
+/// Spese aggiunte dall'estratto conto che probabilmente non lo sono: prelievi, giroconti,
+/// o un pagamento grande già presente nell'app (es. il mutuo della ricorrente).
+func suspiciousBankExpenses(_ all: [Expense]) -> [Expense] {
+    let others = all.filter { !$0.fromBank && !$0.isCash }
+    return all.filter { e in
+        e.fromBank && (looksLikeNotExpense(e.note) || others.contains { nearBigPayment($0, amount: e.amount, date: e.date) })
+    }
+}
 
 private func sameName(_ a: String, _ b: String) -> Bool {
     func words(_ s: String) -> Set<String> {
@@ -252,6 +275,8 @@ func compareBank(_ rows: [BankRow], with expenses: [Expense], ignored: Set<Strin
         let near = pool.filter { abs($0.date.timeIntervalSince(r.date)) <= 3.5 * 86400 && abs($0.myAmount - r.amount) < 0.005 }
         if let e = near.min(by: { abs($0.date.timeIntervalSince(r.date)) < abs($1.date.timeIntervalSince(r.date)) }) {
             pool.removeAll { $0 === e }
+        } else if let e = pool.first(where: { nearBigPayment($0, amount: r.amount, date: r.date) }) {
+            pool.removeAll { $0 === e }   // mutuo o rata già segnati con un importo un po' diverso
         } else {
             unmatched.append(r)
         }
@@ -341,6 +366,31 @@ struct BankCheckView: View {
                     }
                 }
             }
+            let added = expenses.filter(\.fromBank)
+            if !added.isEmpty {
+                let start = accounts.first?.startDate ?? .distantPast
+                let before = added.filter { $0.date < start }, after = added.filter { $0.date >= start }
+                let odd = suspiciousBankExpenses(expenses)
+                Section {
+                    summaryRow("Prima di usare l'app", "solo Statistiche, non toccano il saldo", before, .secondary)
+                    summaryRow("Dopo l'inizio dell'app", "abbassano Disponibile e Carta", after, .red)
+                    if !odd.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Probabilmente non sono spese: \(odd.count) · \(eur(odd.reduce(0) { $0 + $1.amount }))").bold()
+                            ForEach(odd.prefix(6), id: \.persistentModelID) { e in
+                                Text("\(e.date.formatted(.dateTime.day().month(.abbreviated))) · \(e.note) · \(eur(e.amount))")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        Button("Togli queste \(odd.count)", role: .destructive) { delete(odd) }
+                    }
+                    Button("Togli tutte le spese aggiunte dall'estratto conto", role: .destructive) { confirmRemoveAll = true }
+                } header: {
+                    Text("Spese aggiunte dall'estratto conto")
+                } footer: {
+                    Text("Prelievi, giroconti e trasferimenti tra i tuoi conti non vengono più proposti come spese.")
+                }
+            }
             let fixable = altroFromBank()
             if !fixable.isEmpty {
                 Section {
@@ -369,9 +419,33 @@ struct BankCheckView: View {
             if diffs.isEmpty { BankStore.pending = [] } else { BankStore.pending = read; rows = read; showDiffs = true }
         }
         .sheet(isPresented: $showDiffs) { BankDiffView(rows: rows) }
+        .confirmationDialog("Togliere tutte le spese aggiunte dall'estratto conto?", isPresented: $confirmRemoveAll, titleVisibility: .visible) {
+            Button("Togli \(expenses.filter(\.fromBank).count) spese", role: .destructive) { delete(expenses.filter(\.fromBank)) }
+        } message: {
+            Text("Le spese inserite a mano, da Wallet o dalle email restano.")
+        }
     }
 
     @Query(sort: \CategoryItem.order) private var cats: [CategoryItem]
+    @Query private var accounts: [Account]
+    @State private var confirmRemoveAll = false
+
+    private func summaryRow(_ title: String, _ note: String, _ list: [Expense], _ color: Color) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(note).font(.caption).foregroundStyle(color)
+            }
+            Spacer()
+            Text("\(list.count) · \(eur(list.reduce(0) { $0 + $1.amount }))").bold()
+        }
+    }
+
+    private func delete(_ list: [Expense]) {
+        for e in list { ctx.delete(e) }
+        try? ctx.save()
+        updateWidgetSnapshot(ctx)
+    }
 
     /// Spese in Altro arrivate dall'estratto conto (segnate, o uguali a una riga dell'ultimo file), con la riga della banca.
     private func altroFromBank() -> [(Expense, BankRow)] {

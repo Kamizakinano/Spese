@@ -68,4 +68,25 @@ final class EstrattoContoTests: XCTestCase {
         XCTAssertEqual(rows[3].merchant, "Vinted")
         XCTAssertEqual(guessCategory(merchant: "Mc Donald's", available: cats, defaults: UserDefaults(suiteName: "prova-cat")!), "Pranzi/Cene fuori")
     }
+
+    func testNonSpeseEscluse() {
+        let rows = bankRows(from: [["Data", "Operazione", "Dettagli", "Importo"],
+                                   ["03/11/2026", "Prelievo Carta", "ATM Intesa", "-50,00"],
+                                   ["03/11/2026", "Giroconto", "verso Salvadanaio", "-100,00"],
+                                   ["03/11/2026", "Lidl", "", "-3,00"]])
+        XCTAssertEqual(rows.map(\.merchant), ["Lidl"])
+    }
+
+    func testMutuoConImportoDiverso() {
+        let mutuo = Expense(amount: 420, categoryName: "Casa e bollette", date: d(11, 1), note: "Mutuo")
+        let row = BankRow(date: d(11, 3), amount: 423.19, merchant: "Pag.finanziamento Rateale", booked: true)
+        XCTAssertTrue(compareBank([row], with: [mutuo]).isEmpty, "La rata del mutuo già segnata non manca")
+        let doppio = Expense(amount: 423.19, categoryName: "Altro", date: d(11, 3), note: "Pag.finanziamento Rateale")
+        doppio.fromBank = true
+        let prelievo = Expense(amount: 50, categoryName: "Altro", date: d(11, 3), note: "Prelievo Carta")
+        prelievo.fromBank = true
+        let lidl = Expense(amount: 3, categoryName: "Alimentari", date: d(11, 3), note: "Lidl")
+        lidl.fromBank = true
+        XCTAssertEqual(Set(suspiciousBankExpenses([mutuo, doppio, prelievo, lidl]).map(\.note)), ["Pag.finanziamento Rateale", "Prelievo Carta"])
+    }
 }
