@@ -100,8 +100,6 @@ func addCardPayment(amount: String, merchant: String, method: PayMethod) async t
             }
             ctx.insert(e)
             try ctx.save()
-            updateWidgetSnapshot(ctx)
-            runAutoBackup(ctx)
             if e.needsAmount {
                 ApplePayLog.finish(entry, "Importo non leggibile: salvata da completare in \(cat)")
             } else {
@@ -111,6 +109,8 @@ func addCardPayment(amount: String, merchant: String, method: PayMethod) async t
                 notify(e.needsAmount ? "Spesa da completare" : "Spesa registrata",
                        e.needsAmount ? "\(name): apri Spese e inserisci l'importo" : "\(eur(e.amount)) · \(name.isEmpty ? cat : name)")
             }
+            updateWidgetSnapshot(ctx)
+            runAutoBackup(ctx)
         } catch {
             ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
             throw error
