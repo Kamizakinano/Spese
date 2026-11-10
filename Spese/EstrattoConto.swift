@@ -249,9 +249,9 @@ private func nearBigPayment(_ e: Expense, amount: Double, date: Date) -> Bool {
 /// Spese aggiunte dall'estratto conto che probabilmente non lo sono: prelievi, giroconti,
 /// o un pagamento grande già presente nell'app (es. il mutuo della ricorrente).
 func suspiciousBankExpenses(_ all: [Expense]) -> [Expense] {
-    let others = all.filter { !$0.fromBank && !$0.isCash }
+    let others = all.filter { !$0.fromBank && !$0.isCash && $0.myAmount >= 49 }
     return all.filter { e in
-        e.fromBank && (looksLikeNotExpense(e.note) || others.contains { nearBigPayment($0, amount: e.amount, date: e.date) })
+        e.fromBank && (looksLikeNotExpense(e.note) || (e.amount >= 50 && others.contains { nearBigPayment($0, amount: e.amount, date: e.date) }))
     }
 }
 
@@ -271,16 +271,22 @@ func compareBank(_ rows: [BankRow], with expenses: [Expense], ignored: Set<Strin
     var pool = expenses.filter { !$0.isCash && $0.paidByMe && !$0.needsAmount && $0.date >= from.addingTimeInterval(-3 * 86400) && $0.date < to.addingTimeInterval(3 * 86400) }
     var diffs: [BankDiff] = []
     var unmatched: [BankRow] = []
+    // Spese raggruppate per importo in centesimi: si cerca solo tra quelle con lo stesso importo (veloce con migliaia di spese).
+    func cents(_ v: Double) -> Int { Int((v * 100).rounded()) }
+    let byCents = Dictionary(grouping: pool) { cents($0.myAmount) }
+    let big = pool.filter { $0.myAmount >= 49 }
+    var used = Set<ObjectIdentifier>()
     for r in rows.sorted(by: { $0.date < $1.date }) {
-        let near = pool.filter { abs($0.date.timeIntervalSince(r.date)) <= 3.5 * 86400 && abs($0.myAmount - r.amount) < 0.005 }
+        let near = (byCents[cents(r.amount)] ?? []).filter { !used.contains(ObjectIdentifier($0)) && abs($0.date.timeIntervalSince(r.date)) <= 3.5 * 86400 }
         if let e = near.min(by: { abs($0.date.timeIntervalSince(r.date)) < abs($1.date.timeIntervalSince(r.date)) }) {
-            pool.removeAll { $0 === e }
-        } else if let e = pool.first(where: { nearBigPayment($0, amount: r.amount, date: r.date) }) {
-            pool.removeAll { $0 === e }   // mutuo o rata già segnati con un importo un po' diverso
+            used.insert(ObjectIdentifier(e))
+        } else if let e = big.first(where: { !used.contains(ObjectIdentifier($0)) && nearBigPayment($0, amount: r.amount, date: r.date) }) {
+            used.insert(ObjectIdentifier(e))   // mutuo o rata già segnati con un importo un po' diverso
         } else {
             unmatched.append(r)
         }
     }
+    pool.removeAll { used.contains(ObjectIdentifier($0)) }
     for r in unmatched where !ignored.contains(r.key) {
         // Stesso negozio e stesso giorno ma importo diverso: da correggere.
         if let e = pool.first(where: { abs($0.date.timeIntervalSince(r.date)) <= 1.5 * 86400 && sameName($0.note, r.merchant) }) {
@@ -291,9 +297,9 @@ func compareBank(_ rows: [BankRow], with expenses: [Expense], ignored: Set<Strin
         }
     }
     // Spese rimaste nei giorni del file con una gemella (stesso importo, entro 2 giorni): forse doppie.
-    let inRange = expenses.filter { !$0.isCash && $0.paidByMe && $0.date >= from && $0.date < to }
+    let inRange = Dictionary(grouping: expenses.filter { !$0.isCash && $0.paidByMe && $0.date >= from && $0.date < to }) { cents($0.myAmount) }
     for e in pool where e.date >= from && e.date < to && e.planID.isEmpty {
-        if inRange.contains(where: { $0 !== e && abs($0.myAmount - e.myAmount) < 0.005 && abs($0.date.timeIntervalSince(e.date)) <= 2 * 86400 }) {
+        if (inRange[cents(e.myAmount)] ?? []).contains(where: { $0 !== e && abs($0.myAmount - e.myAmount) < 0.005 && abs($0.date.timeIntervalSince(e.date)) <= 2 * 86400 }) {
             diffs.append(.duplicate(e.persistentModelID, amount: e.myAmount, merchant: e.note, date: e.date))
         }
     }
@@ -317,9 +323,32 @@ enum BankStore {
         get { Set(UserDefaults.standard.stringArray(forKey: bankIgnoredKey) ?? []) }
         set { UserDefaults.standard.set(Array(newValue), forKey: bankIgnoredKey) }
     }
+    /// Letto una volta e tenuto in memoria: il file può avere migliaia di righe.
+    private static var cache: [BankRow]?
     static var pending: [BankRow] {
-        get { (UserDefaults.standard.data(forKey: bankPendingKey)).flatMap { try? JSONDecoder().decode([BankRow].self, from: $0) } ?? [] }
-        set { UserDefaults.standard.set(newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue), forKey: bankPendingKey) }
+        get {
+            if let cache { return cache }
+            let rows = (UserDefaults.standard.data(forKey: bankPendingKey)).flatMap { try? JSONDecoder().decode([BankRow].self, from: $0) } ?? []
+            cache = rows
+            return rows
+        }
+        set {
+            cache = newValue
+            UserDefaults.standard.set(newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue), forKey: bankPendingKey)
+            if newValue.isEmpty { pendingCount = 0 }
+        }
+    }
+    /// Quante differenze ha l'ultimo confronto: la Home legge solo questo numero, senza rifare il confronto.
+    static var pendingCount: Int {
+        get { UserDefaults.standard.integer(forKey: "bankPendingCount") }
+        set { UserDefaults.standard.set(newValue, forKey: "bankPendingCount") }
+    }
+    /// Rifà il confronto con l'ultimo file e salva quante differenze restano (e libera il file se non ne restano).
+    static func refresh(with expenses: [Expense]) {
+        let rows = pending
+        guard !rows.isEmpty else { pendingCount = 0; return }
+        let n = compareBank(rows, with: expenses, ignored: ignored).count
+        if n == 0 { pending = [] } else { pendingCount = n }
     }
 }
 
@@ -401,6 +430,7 @@ struct BankCheckView: View {
             }
         }
         .navigationTitle("Controllo estratto conto").navigationBarTitleDisplayMode(.inline)
+        .onAppear { BankStore.refresh(with: expenses) }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [UTType(filenameExtension: "xlsx") ?? .data, .commaSeparatedText, .plainText]) { result in
             guard case .success(let url) = result else { return }
@@ -416,7 +446,7 @@ struct BankCheckView: View {
             list.append(BankCheck(from: read.map(\.date).min()!, to: read.map(\.date).max()!, differences: diffs.count, at: Date()))
             BankStore.checks = list; checks = list
             message = "Letti \(read.count) movimenti in uscita."
-            if diffs.isEmpty { BankStore.pending = [] } else { BankStore.pending = read; rows = read; showDiffs = true }
+            if diffs.isEmpty { BankStore.pending = [] } else { BankStore.pending = read; BankStore.pendingCount = diffs.count; rows = read; showDiffs = true }
         }
         .sheet(isPresented: $showDiffs) { BankDiffView(rows: rows) }
         .confirmationDialog("Togliere tutte le spese aggiunte dall'estratto conto?", isPresented: $confirmRemoveAll, titleVisibility: .visible) {
@@ -449,12 +479,13 @@ struct BankCheckView: View {
 
     /// Spese in Altro arrivate dall'estratto conto (segnate, o uguali a una riga dell'ultimo file), con la riga della banca.
     private func altroFromBank() -> [(Expense, BankRow)] {
-        let file = BankStore.pending
         let cal = Calendar.current
+        func key(_ d: Date, _ a: Double) -> String { "\(cal.startOfDay(for: d).timeIntervalSince1970)|\(Int((a * 100).rounded()))" }
+        let file = Dictionary(grouping: BankStore.pending) { key($0.date, $0.amount) }
         return expenses.compactMap { e in
             guard e.categoryRaw == otherCategory, !e.isCash else { return nil }
             let clean = cleanMerchant(e.note)
-            let row = file.first { cal.isDate($0.date, inSameDayAs: e.date) && abs($0.amount - e.amount) < 0.005 && ($0.merchant == e.note || $0.merchant == clean) }
+            let row = file[key(e.date, e.amount)]?.first { $0.merchant == e.note || $0.merchant == clean }
             guard e.fromBank || row != nil else { return nil }
             var r = row ?? BankRow(date: e.date, amount: e.amount, merchant: clean, booked: true)
             r.merchant = clean
@@ -557,7 +588,7 @@ struct BankDiffView: View {
                     if d.isEmpty { Button("Fine") { BankStore.pending = []; dismiss() } }
                 }
             }
-            .onDisappear { if diffs.isEmpty { BankStore.pending = [] } }
+            .onDisappear { BankStore.refresh(with: expenses) }
         }
     }
 
@@ -601,12 +632,11 @@ struct BankDiffView: View {
 /// Riquadro in Home quando l'ultimo estratto conto ha differenze da vedere.
 struct BankPendingSection: View {
     @Environment(\.scenePhase) private var phase
-    @Query private var expenses: [Expense]
-    @State private var rows = BankStore.pending
+    @State private var n = BankStore.pending.isEmpty ? 0 : BankStore.pendingCount
     @State private var open = false
 
     var body: some View {
-        let n = rows.isEmpty ? 0 : compareBank(rows, with: expenses, ignored: BankStore.ignored).count
+        // Qui si legge solo il numero salvato: il confronto si rifà quando si chiude l'elenco.
         Group {
             if n > 0 {
                 Section {
@@ -621,8 +651,10 @@ struct BankPendingSection: View {
                 .listRowBackground(Color.orange.opacity(0.12))
             }
         }
-        .sheet(isPresented: $open, onDismiss: { rows = BankStore.pending }) { BankDiffView(rows: rows) }
-        .onChange(of: phase) { _, p in if p == .active { rows = BankStore.pending } }
-        .onAppear { rows = BankStore.pending }
+        .sheet(isPresented: $open, onDismiss: reload) { BankDiffView(rows: BankStore.pending) }
+        .onChange(of: phase) { _, p in if p == .active { reload() } }
+        .onAppear(perform: reload)
     }
+
+    private func reload() { n = BankStore.pending.isEmpty ? 0 : BankStore.pendingCount }
 }
