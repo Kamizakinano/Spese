@@ -658,3 +658,25 @@ struct BankPendingSection: View {
 
     private func reload() { n = BankStore.pending.isEmpty ? 0 : BankStore.pendingCount }
 }
+
+// MARK: Pulizia una tantum (2.68)
+
+let bankCleanupKey = "bankCleanupBeforeOct2026"
+
+/// L'import da gennaio ha reso l'app lentissima: all'apertura, una volta sola, si tolgono le spese
+/// arrivate dall'estratto conto fino al 30 settembre 2026. Prima si salva una copia di tutto in Documenti.
+@MainActor
+func removeOldBankExpensesOnce() {
+    let d = UserDefaults.standard
+    guard !d.bool(forKey: bankCleanupKey) else { return }
+    let ctx = SharedStore.container.mainContext
+    let cutoff = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+    if let data = backupData(ctx),
+       let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+        try? data.write(to: dir.appendingPathComponent("Spese-prima-della-pulizia.json"), options: .atomic)
+    }
+    try? ctx.delete(model: Expense.self, where: #Predicate<Expense> { $0.fromBank && $0.date < cutoff })
+    try? ctx.save()
+    BankStore.pending = []   // il vecchio file le farebbe ricomparire come "mancanti"
+    d.set(true, forKey: bankCleanupKey)
+}

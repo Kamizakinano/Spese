@@ -24,7 +24,10 @@ struct SpeseApp: App {
     @AppStorage("theme") private var theme = 0
     @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
     static let notifDelegate = NotifDelegate()
-    init() { UNUserNotificationCenter.current().delegate = SpeseApp.notifDelegate }
+    init() {
+        UNUserNotificationCenter.current().delegate = SpeseApp.notifDelegate
+        MainActor.assumeIsolated { removeOldBankExpensesOnce() }
+    }
 
     var body: some Scene {
         WindowGroup {
