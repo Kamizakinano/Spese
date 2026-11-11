@@ -123,3 +123,41 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Mappa del progetto
+
+Cartelle:
+- `Spese/`: tutto il codice dell'app (schermate, modelli, calcoli, automazioni).
+- `SpeseWidget/`: i widget (budget, speso, spesa veloce).
+- `Shared/`: dati condivisi tra app e widget (`WidgetSnapshot.swift`).
+- `SpeseTests/`: prove automatiche della logica; `SpeseUITests/`: prove delle schermate sul simulatore.
+- `Config/`: Info.plist ed entitlements di app e widget.
+- `esempi/`: email vere (Intesa, Klarna) per le prove; `.github/workflows/build.yml`: la CI.
+- `.claude/skills/`: skill installate (replica-entrepreneur).
+
+File principali:
+- Modelli e salvataggio (SwiftData), categorie di base, `eur()`: `SpeseApp.swift`.
+- Schede: `ContentView.swift`. Home ed elenco spese: `NuovaHome.swift`. Conti: `Conti.swift`. Risparmi, stipendio, primo avvio: `Conto.swift`. Statistiche: `StatsView.swift`. Altro: `SettingsView.swift`.
+- Nuova spesa (modulo), Ti devono, tag, blocco, backup: `Extras.swift`. Spesa veloce: `SpesaVeloce.swift`.
+- Calcoli di saldo, budget e periodo: `Ledger.swift`, `Periodo.swift`. Previsione e barre per categoria: `Previsione.swift`. Prossimi 30 giorni: `Prossimi30.swift`.
+- Spese automatiche: `EmailBanca.swift` (email banca), `Intents.swift` (Wallet, azioni di Comandi Rapidi, categoria indovinata), `PayPal.swift`, `Klarna.swift`, `ApplePay.swift` (Registro pagamenti).
+- Estratto conto: `EstrattoConto.swift`. Notifiche: `Avvisi.swift`. Esportazione: `Esporta.swift`.
+
+Dove intervenire:
+- Nuova categoria di base → `defaultCategories` in `SpeseApp.swift` (e `seed()` in `ContentView.swift` per chi l'app ce l'ha già).
+- Parole per indovinare la categoria → `guessCategory` in `Intents.swift`.
+- Grafici delle Statistiche → `StatsView.swift` e `Previsione.swift`; dettaglio categoria → `CategoriaDettaglio.swift`.
+- Home (riquadri, anello, elenco del giorno) → `NuovaHome.swift`.
+- Nuovo formato di email o SMS → `EmailBanca.swift` o `PayPal.swift`, con una prova in `SpeseTests/`.
+- Nuovo campo in una spesa → `Expense` in `SpeseApp.swift`, sempre con valore di default.
+- Notifiche e orari → `Avvisi.swift`. Viaggi → `Viaggi.swift` e `ViaggiViews.swift`.
+- Versione → `MARKETING_VERSION` in `project.yml` (due punti).
+
+Comandi (servono un Mac e Xcode; da qui si usa la CI):
+- Progetto: `xcodegen generate` crea `Spese.xcodeproj` da `project.yml`.
+- Prove: `xcodebuild test -project Spese.xcodeproj -scheme Spese -destination` con un simulatore iPhone.
+- Compilazione e IPA: push sul ramo `claude/...`, la CI fa prove e IPA (vedi "Versioni, build e IPA").
+
+Regole per la mappa:
+- Quando aggiungi, sposti o rinomini file importanti, aggiorna questa mappa nello stesso commit.
+- Quando inizi a lavorare su una nuova versione dell'app (nuovo ramo o nuovo numero di versione), controlla che la Mappa del progetto sia ancora corretta e aggiornala prima di fare altre modifiche.
