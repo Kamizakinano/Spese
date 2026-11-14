@@ -220,9 +220,9 @@ struct AddFromBankEmailIntent: AppIntent {
                 let ctx = SharedStore.container.mainContext
                 let result = try recordKlarnaPayment(k, ctx: ctx)
                 ApplePayLog.finish(entry, result)
+                notify("Klarna", result)
                 updateWidgetSnapshot(ctx)
                 runAutoBackup(ctx)
-                notify("Klarna", result)
             } catch {
                 ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
                 throw error
@@ -235,9 +235,9 @@ struct AddFromBankEmailIntent: AppIntent {
                 let ctx = SharedStore.container.mainContext
                 let result = try recordPayPalInstallment(p, ctx: ctx)
                 ApplePayLog.finish(entry, result)
+                notify("PayPal", result)
                 updateWidgetSnapshot(ctx)
                 runAutoBackup(ctx)
-                notify("PayPal", result)
             } catch {
                 ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
                 throw error
@@ -250,9 +250,9 @@ struct AddFromBankEmailIntent: AppIntent {
                 let ctx = SharedStore.container.mainContext
                 let result = try recordPayPalSent(amount: p.amount, person: p.person, ctx: ctx)
                 ApplePayLog.finish(entry, result)
+                notify("Da PayPal", result)
                 updateWidgetSnapshot(ctx)
                 runAutoBackup(ctx)
-                notify("Da PayPal", result)
             } catch {
                 ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
                 throw error
@@ -275,11 +275,12 @@ struct AddFromBankEmailIntent: AppIntent {
             let ctx = SharedStore.container.mainContext
             let result = try recordBankEmail(e, ctx: ctx)
             ApplePayLog.finish(entry, result + (e.merchant.isEmpty ? "" : " · \(e.merchant)"))
-            updateWidgetSnapshot(ctx)
-            runAutoBackup(ctx)
+            // Prima la notifica, poi widget, avvisi e backup (più lenti).
             if UserDefaults.standard.bool(forKey: applePayNotifyKey), !result.contains("ignorat") {
                 notify("Dalla banca", result)
             }
+            updateWidgetSnapshot(ctx)
+            runAutoBackup(ctx)
         } catch {
             ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
             throw error

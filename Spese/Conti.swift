@@ -142,6 +142,9 @@ struct ContiView: View {
                     NavigationLink { CardLinkView() } label: {
                         Label { Text("Collega la carta (Apple Pay)") } icon: { Image(systemName: "creditcard.and.123").foregroundStyle(Theme.accent) }
                     }
+                    NavigationLink { BankCheckView() } label: {
+                        Label { Text("Controllo estratto conto") } icon: { Image(systemName: "doc.text.magnifyingglass").foregroundStyle(Theme.accent) }
+                    }
                     NavigationLink { ApplePayLogView() } label: {
                         Label { Text("Registro pagamenti") } icon: { Image(systemName: "list.bullet.clipboard").foregroundStyle(Theme.accent) }
                     }

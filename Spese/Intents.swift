@@ -100,8 +100,6 @@ func addCardPayment(amount: String, merchant: String, method: PayMethod) async t
             }
             ctx.insert(e)
             try ctx.save()
-            updateWidgetSnapshot(ctx)
-            runAutoBackup(ctx)
             if e.needsAmount {
                 ApplePayLog.finish(entry, "Importo non leggibile: salvata da completare in \(cat)")
             } else {
@@ -111,6 +109,8 @@ func addCardPayment(amount: String, merchant: String, method: PayMethod) async t
                 notify(e.needsAmount ? "Spesa da completare" : "Spesa registrata",
                        e.needsAmount ? "\(name): apri Spese e inserisci l'importo" : "\(eur(e.amount)) · \(name.isEmpty ? cat : name)")
             }
+            updateWidgetSnapshot(ctx)
+            runAutoBackup(ctx)
         } catch {
             ApplePayLog.finish(entry, "Errore nel salvataggio: \(error.localizedDescription)")
             throw error
@@ -189,6 +189,13 @@ func renameLearnedCategory(from old: String, to new: String, defaults: UserDefau
     defaults.set(map, forKey: learnedCategoriesKey)
 }
 
+/// La categoria scelta dall'utente per questo esercente, se c'è.
+func learnedCategory(merchant: String, available: [String], defaults: UserDefaults = .standard) -> String? {
+    guard let map = defaults.dictionary(forKey: learnedCategoriesKey) as? [String: String],
+          let c = map[merchantKey(merchant)], available.contains(c) else { return nil }
+    return c
+}
+
 /// Sceglie la categoria in base al nome dell'esercente: prima quella imparata, poi le regole.
 func guessCategory(merchant: String, available: [String], defaults: UserDefaults = .standard) -> String {
     if let map = defaults.dictionary(forKey: learnedCategoriesKey) as? [String: String],
@@ -201,13 +208,13 @@ func guessCategory(merchant: String, available: [String], defaults: UserDefaults
     let rules: [(String, [String])] = [
         (giftCardCategory, ["gift card", "giftcard", "gift", "buono regalo", "carta regalo", "card regalo"]),
         ("Alimentari", ["conad", "coop", "esselunga", "lidl", "carrefour", "eurospin", "penny", "despar", "aldi", "md", "pam",
-                        "supermercato", "panificio", "macelleria", "ortofrutta"]),
+                        "supermercato", "panificio", "macelleria", "ortofrutta", "ipertosan", "famila", "tigros", "bennet", "iper", "eurospar"]),
         ("Pranzi/Cene fuori", ["bar", "caffè", "caffe", "ristorante", "pizzeria", "trattoria", "osteria", "mcdonald", "burger",
-                               "sushi", "kebab", "gelateria", "pasticceria", "starbucks", "glovo", "deliveroo", "autogrill"]),
+                               "sushi", "kebab", "gelateria", "pasticceria", "starbucks", "glovo", "deliveroo", "autogrill", "mc donald", "just eat", "roadhouse"]),
         ("Trasporti", ["eni", "q8", "tamoil", "esso", "ip", "carburanti", "telepass", "autostrade", "atm", "trenord", "uber", "taxi", "parcheggio"]),
         ("Viaggi", ["trenitalia", "italo", "ryanair", "easyjet", "wizz", "booking", "airbnb", "hotel", "flixbus", "expedia"]),
         ("Salute", ["farmacia", "parafarmacia", "ospedale", "dentista", "clinica", "ottica"]),
-        ("Shopping", ["amazon", "zalando", "zara", "ikea", "decathlon", "mediaworld", "unieuro", "shein", "ebay"]),
+        ("Shopping", ["amazon", "zalando", "zara", "ikea", "decathlon", "mediaworld", "unieuro", "shein", "ebay", "asos", "vinted", "temu", "aliexpress", "shopping", "primark", "h&m", "kiabi", "ovs"]),
         ("Svago", ["netflix", "spotify", "cinema", "disney", "steam", "playstation", "nintendo", "teatro", "youtube"]),
         ("Casa e bollette", ["enel", "edison", "a2a", "hera", "vodafone", "iliad", "fastweb", "bolletta", "leroy", "brico"])
     ]

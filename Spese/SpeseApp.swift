@@ -24,7 +24,10 @@ struct SpeseApp: App {
     @AppStorage("theme") private var theme = 0
     @AppStorage(appColorKey) private var appColor = AppColor.verde.rawValue
     static let notifDelegate = NotifDelegate()
-    init() { UNUserNotificationCenter.current().delegate = SpeseApp.notifDelegate }
+    init() {
+        UNUserNotificationCenter.current().delegate = SpeseApp.notifDelegate
+        MainActor.assumeIsolated { removeOldBankExpensesOnce() }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -55,6 +58,7 @@ struct SpeseApp: App {
     var rate: Double = 0             // cambio usato: 1 € = rate nella valuta locale
     var paidBy: String = ""          // chi ha pagato ("" = io)
     var splitJSON: String = ""       // divisione: {"Io": 10, "Marco": 10} in euro
+    var fromBank: Bool = false       // aggiunta dal controllo estratto conto
     var needsAmount: Bool = false    // arrivata da Apple Pay senza un importo leggibile: da completare
     var settledMethod: String = ""   // "Ti devono": incassato "carta" (sul conto) o "contanti"
     var refundKey: String = ""       // lega la spesa all'entrata (o ai contanti) del rimborso incassato
