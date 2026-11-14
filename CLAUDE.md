@@ -43,7 +43,7 @@ App iOS per le spese personali (SwiftUI, SwiftData, iOS 17+). Il proprietario la
 
 ## A che punto siamo
 
-- La **2.61** è in `main` (build 86). La **2.62** (build 87), la **2.63** (build 88) la **2.64** (build 89) la **2.65** (build 90) e la **2.66** (build 91, superata) e la **2.67** (build 92) e la **2.68** sono sul ramo `claude/beautiful-newton-kprwv0`: se l'utente conferma, PR "Versione 2.68 (già provata, build N) [skip ci]" con squash.
+- La **2.68** è in `main` (build 93; contiene 2.62–2.68). La prossima versione (2.69) parte da `origin/main` su un ramo nuovo.
 - 24.10: pagamento IPERTOSANO perso perché l'email è arrivata a Comandi Rapidi senza testo e Wallet ha dato "Impossibile comunicare con un'applicazione di supporto" (errore di iOS).
 - In attesa: un'**email vera dell'addebito del mutuo** (Intesa Sanpaolo). Quando arriva, controlla che `parseBankEmail` la legga come spesa con importo e data giusti e aggiungi una prova in `SpeseTests/EmailBancaTests.swift`.
 - In attesa: **preavviso di addebito diretto Intesa** (`esempi/intesa-preavviso-addebito.txt`, arrivato come notifica dell'app, non leggibile dai Comandi Rapidi). Chiesto all'utente se arriva anche per email/SMS. Oggi `parseBankEmail` lo leggerebbe come spesa da 170,63 € al 26.10 ma senza esercente ("da parte di" non è tra le parole cercate) e con il "+" davanti; andrebbe trattato come spesa in arrivo, non come spesa fatta, e l'addebito vero dopo non deve fare doppione.
