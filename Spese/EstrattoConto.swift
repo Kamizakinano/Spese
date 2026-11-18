@@ -393,6 +393,20 @@ struct BankCheckView: View {
                             }
                         }
                     }
+                    // Trascinando a sinistra si toglie la riga dallo storico (le spese restano).
+                    .onDelete { idx in
+                        let shown = Array(checks.reversed())
+                        let gone = Set(idx.map { shown[$0] })
+                        if gone.contains(where: { $0 == checks.last }) { BankStore.pending = [] }
+                        checks.removeAll { gone.contains($0) }
+                        BankStore.checks = checks
+                    }
+                    if checks.count > 1 {
+                        Button("Cancella i controlli vecchi", role: .destructive) {
+                            checks = Array(checks.suffix(1))
+                            BankStore.checks = checks
+                        }
+                    }
                 }
             }
             let added = expenses.filter(\.fromBank)
